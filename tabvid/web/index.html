@@ -1,0 +1,2218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vid2Tab</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 36'%3E%3Cpath d='M16 34C9 26 2 18 2 10 2 4 8 2 16 2s14 2 14 8c0 8-7 16-14 24z' fill='%235c7041'/%3E%3Cpath d='M12.6 9.6v9.8c0 .8.9 1.3 1.6.8l7.3-4.9c.6-.4.6-1.2 0-1.6l-7.3-4.9c-.7-.5-1.6 0-1.6.8z' fill='%23fcfbf4'/%3E%3C/svg%3E">
+<script>
+  // Theme before first paint: 'light', 'dark', 'night' or (no setting) the system's light or dark.
+  try { const t = localStorage.getItem('vid2tab.theme'); if (['light', 'dark', 'night'].includes(t)) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<style>
+@font-face { font-family: Fraunces; src: url(/fonts/fraunces.woff2) format('woff2'); font-weight: 400 600; font-display: swap; }
+@font-face { font-family: Figtree; src: url(/fonts/figtree.woff2) format('woff2'); font-weight: 400 700; font-display: swap; }
+
+/* Matcha latte (light), Matcha dark and Night. Every colour on the page comes from these tokens.
+   Pages (covers, sheet, play mode) are the PDF's black-on-white images laid on --paper: multiplied in light and
+   dark (dark dims the paper), inverted in Night (light notes on a dark page). Print is always black on white. */
+:root {
+  --ground: #eeebdf; --band: #e3dfc9; --surface: #f7f5ec; --paper: #fcfbf4; --field: #fcfbf4;
+  --ink: #2a2a20; --soft: #5c5b4d; --line: #d8d3bf; --line-strong: #bdb79f;
+  --act: #5c7041; --act-ink: #ffffff; --act-text: #4c5f35; --act-soft: #e3e8d3;
+  --mark: #5c7041; --mark-cut: #fcfbf4;
+  --chk: #94561a; --chk-soft: #f2e4cf; --bad: #a3352a; --bad-soft: #f5dfda;
+  --box: #4fb34a; --mask: #f08a24; --cover-dim: none; --cover-back: brightness(.97);
+  --page-filter: none; --page-blend: multiply; --page-note: #5c5b4d;
+  --follow-tint: rgba(92,112,65,.16); --follow-mark: #5c7041;     /* play along: the line being played, ring and playhead */
+  --loop-tint: rgba(196,132,38,.16); --loop-mark: #a8681a;         /* play along: the looped measures */
+  --shadow-page: 0 1px 1px rgba(40,35,20,.10), 0 2px 4px rgba(40,35,20,.06), 0 16px 22px -14px rgba(40,35,20,.42);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme=light]) {
+    --ground: #1d1c17; --band: #26251e; --surface: #24231d; --paper: #e8e4d4; --field: #2b2a22;
+    --ink: #ece9dc; --soft: #b1ac9a; --line: #3b392f; --line-strong: #57543f;
+    --act: #b4c88e; --act-ink: #1c2311; --act-text: #c0d29d; --act-soft: #333a26;
+    --mark: #bacd96; --mark-cut: #26251e;
+    --chk: #e8b06a; --chk-soft: #3a2f1e; --bad: #f0948a; --bad-soft: #3d2420;
+    --box: #8fd14f; --cover-dim: brightness(.9); --cover-back: brightness(.7);
+    --follow-tint: rgba(92,112,65,.2); --follow-mark: #4c5f35;
+    --loop-tint: rgba(196,132,38,.2); --loop-mark: #8f5712;
+    --shadow-page: 0 1px 2px rgba(0,0,0,.4), 0 16px 24px -14px rgba(0,0,0,.7);
+    color-scheme: dark;
+  }
+}
+:root[data-theme=dark], :root[data-theme=night] {
+  --ground: #1d1c17; --band: #26251e; --surface: #24231d; --paper: #e8e4d4; --field: #2b2a22;
+  --ink: #ece9dc; --soft: #b1ac9a; --line: #3b392f; --line-strong: #57543f;
+  --act: #b4c88e; --act-ink: #1c2311; --act-text: #c0d29d; --act-soft: #333a26;
+  --mark: #bacd96; --mark-cut: #26251e;
+  --chk: #e8b06a; --chk-soft: #3a2f1e; --bad: #f0948a; --bad-soft: #3d2420;
+  --box: #8fd14f; --cover-dim: brightness(.9); --cover-back: brightness(.7);
+  --follow-tint: rgba(92,112,65,.2); --follow-mark: #4c5f35;
+  --loop-tint: rgba(196,132,38,.2); --loop-mark: #8f5712;
+  --shadow-page: 0 1px 2px rgba(0,0,0,.4), 0 16px 24px -14px rgba(0,0,0,.7);
+  color-scheme: dark;
+}
+:root[data-theme=night] {
+  --paper: #2a2923; --cover-dim: none; --cover-back: brightness(.8); --page-note: #b1ac9a;
+  --page-filter: invert(.9) hue-rotate(180deg) sepia(.1); --page-blend: lighten;
+  --follow-tint: rgba(180,200,142,.13); --follow-mark: #b4c88e;
+  --loop-tint: rgba(232,178,96,.14); --loop-mark: #e8b260;
+}
+@media print { :root, :root[data-theme] { --paper: #fff; --cover-dim: none; --page-filter: none; --page-blend: multiply; } }
+
+* { box-sizing: border-box; }
+html { background: var(--ground); }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.5 Figtree, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased; }
+::selection { background: var(--act-soft); color: var(--ink); }
+a { color: inherit; }
+.serif { font-family: Fraunces, Georgia, serif; font-variation-settings: "SOFT" 100; font-weight: 500; }
+h1, h2, h3 { text-wrap: balance; }
+.hidden { display: none !important; }
+.muted { color: var(--soft); }
+.small { font-size: 14px; }
+.spacer { flex: 1; }
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* top bar and the tinted band that some screens continue */
+.band { background: var(--band); }
+header.top { height: 72px; display: flex; align-items: center; gap: 24px; padding: 0 clamp(16px, 4vw, 56px); }
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 22px; letter-spacing: -.02em; text-decoration: none; }
+.logo svg { height: 34px; width: auto; }
+.wrap { padding: 0 clamp(16px, 4vw, 56px); max-width: 1440px; margin: 0 auto; }
+
+/* controls */
+button, .button { font: inherit; font-weight: 600; font-size: 15px; height: 42px; padding: 0 16px; border-radius: 6px;
+  border: 1.5px solid var(--line); background: var(--field); color: var(--ink); cursor: pointer; text-decoration: none;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; }
+button:hover, .button:hover { border-color: var(--line-strong); }
+button.primary, .button.primary { background: var(--act); border-color: var(--act); color: var(--act-ink); font-weight: 700; }
+button.primary:hover, .button.primary:hover { filter: brightness(1.06); }
+button:disabled { opacity: .55; cursor: default; filter: none; }
+button.link, .link { height: auto; border: 0; background: none; padding: 0; color: var(--ink); font-weight: 600;
+  text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 4px; }
+button.link:hover, a.link:hover { text-decoration-color: currentColor; }
+button.icon { width: 40px; padding: 0; }
+button.quiet { border-color: transparent; background: none; color: var(--soft); }
+button.quiet:hover { color: var(--ink); border-color: var(--line); }
+input[type=text], input[type=url], input[type=search] { font: inherit; font-size: 16px; width: 100%; height: 48px; padding: 0 14px;
+  border: 1.5px solid var(--line); border-radius: 6px; background: var(--field); color: var(--ink); }
+input::placeholder { color: var(--soft); opacity: 1; }
+input:focus { outline: none; border-color: var(--act); box-shadow: 0 0 0 3px var(--act-soft); }
+button:focus-visible, .button:focus-visible, a:focus-visible, .cover:focus-visible, label.choice:focus-within {
+  outline: 2.5px solid var(--act); outline-offset: 2px; }
+input[type=text].bad, input[type=url].bad { border-color: var(--bad); }
+.error { color: var(--bad); font-size: 14.5px; font-weight: 600; margin-top: 6px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 22px; }
+.notice { border-radius: 6px; padding: 12px 14px; background: var(--act-soft); }
+.notice.bad { background: var(--bad-soft); }
+.empty { padding: 48px 20px; text-align: center; color: var(--soft); }
+.empty h2 { color: var(--ink); margin: 0 0 6px; font-size: 24px; }
+
+/* ---- home ---- */
+.start { padding-top: 18px; padding-bottom: 34px; }
+.start h1 { font-size: clamp(30px, 4vw, 42px); line-height: 1.1; letter-spacing: -.015em; margin: 0 0 16px; }
+.paste { display: flex; gap: 12px; max-width: 980px; }
+.paste input { height: 64px; font-size: 18px; padding: 0 20px; border-width: 2px; border-color: var(--act); border-radius: 8px; }
+.paste button { height: 64px; font-size: 18px; padding: 0 28px; border-radius: 8px; }
+.alt { margin-top: 12px; color: var(--soft); font-size: 15px; }
+body.dragging .start { outline: 2.5px dashed var(--act); outline-offset: -10px; }
+
+.cont { display: flex; align-items: center; gap: 20px; padding-top: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.cont .lbl { color: var(--soft); font-size: 14px; width: 128px; flex: none; }
+.cont .cover { width: 58px; flex: none; }
+.cont .t { font-size: 22px; line-height: 1.15; text-decoration: none; }
+.cont .meta { color: var(--soft); font-size: 14px; }
+
+.lib { padding-top: 26px; padding-bottom: 72px; }
+.lib .hd { display: flex; align-items: baseline; gap: 14px; margin-bottom: 26px; flex-wrap: wrap; }
+.lib h2 { font-size: 28px; margin: 0; }
+.lib .hd input { width: 250px; height: 40px; margin-left: auto; align-self: center; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 44px 34px; }
+
+.cover { position: relative; isolation: isolate; aspect-ratio: 360 / 466; display: block; border-radius: 1px; }
+.cover .pg { position: absolute; inset: 0; background: var(--paper); box-shadow: var(--shadow-page); overflow: hidden; filter: var(--cover-dim);
+  transition: transform .2s cubic-bezier(.2,.8,.2,1); }
+.cover .pg img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; mix-blend-mode: var(--page-blend); filter: var(--page-filter); }
+.cover .bk { position: absolute; inset: 0; background: var(--paper); filter: var(--cover-back); box-shadow: 0 1px 2px rgba(40,30,20,.15); }
+.cover .b1 { transform: translate(5px, -4px) rotate(1.3deg); z-index: -1; }
+.cover .b2 { transform: translate(9px, -7px) rotate(2.4deg); z-index: -2; }
+a.cover:hover .pg { transform: translateY(-3px); }
+.cover .none { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 16px; color: var(--page-note);
+  font-size: 14px; font-weight: 600; background: repeating-linear-gradient(transparent 0 14px, rgba(92,112,65,.10) 14px 15px), var(--paper); }
+.cover .none.busy::before { content: ""; position: absolute; top: 18px; left: 50%; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%;
+  border: 2.5px solid #5c7041; border-top-color: transparent; animation: spin 1s linear infinite; }
+.sheet .t { display: block; font-size: 19px; line-height: 1.15; margin-top: 14px; text-decoration: none; }
+.sheet .t:hover { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.sheet .a { color: var(--soft); font-size: 14px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag { display: inline-block; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; line-height: 1; padding: 3px 6px 2px;
+  border-radius: 4px; border: 1.5px solid var(--line-strong); color: var(--soft); }
+.sheet .m { display: flex; flex-wrap: wrap; gap: 2px 14px; align-items: center; color: var(--soft); font-size: 14px; }
+.sheet .acts { display: flex; gap: 2px; margin: 6px 0 0 -10px; opacity: 0; transition: opacity .15s; }
+.sheet:hover .acts, .sheet:focus-within .acts { opacity: 1; }
+@media (hover: none) { .sheet .acts { opacity: 1; } }
+.sheet .acts button, .sheet .acts .button { height: 34px; width: 34px; padding: 0; border: 0; background: none; color: var(--soft); }
+.sheet .acts button:hover, .sheet .acts .button:hover { color: var(--ink); background: var(--act-soft); }
+.sheet .confirm { display: flex; gap: 8px; align-items: center; margin-top: 8px; font-size: 14px; flex-wrap: wrap; }
+.sheet .confirm button { height: 32px; font-size: 14px; padding: 0 12px; }
+.sheet .confirm button.danger { background: var(--bad); border-color: var(--bad); color: var(--field); }
+.status { font-weight: 700; font-size: 14px; }
+.status::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; margin-right: 7px; vertical-align: 1px; }
+.status.check { color: var(--chk); } .status.bad { color: var(--bad); } .status.busy { color: var(--act-text); }
+
+/* ---- the steps of making a sheet ---- */
+.steps-bar { display: flex; align-items: center; gap: 22px; padding-top: 6px; padding-bottom: 20px; flex-wrap: wrap; }
+.steps-bar ol { display: flex; align-items: center; list-style: none; margin: 0; padding: 0; flex: 1; max-width: 900px; min-width: 0; }
+.steps-bar li { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; color: var(--soft); flex: 1; white-space: nowrap; }
+.steps-bar li:last-child { flex: 0 0 auto; }
+.steps-bar li::after { content: ""; flex: 1; height: 1.5px; background: var(--line-strong); margin: 0 14px; min-width: 12px; }
+.steps-bar li:last-child::after { display: none; }
+.steps-bar .num { width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid var(--line-strong); display: grid; place-items: center; font-size: 14px; background: var(--field); flex: none; }
+.steps-bar li.on { color: var(--ink); }
+.steps-bar li.on .num { background: var(--act); border-color: var(--act); color: var(--act-ink); }
+.steps-bar li.done .num { background: var(--act-soft); border-color: var(--act-soft); color: var(--act-text); }
+@media (max-width: 760px) { .steps-bar li:not(.on) .lbl { display: none; } }
+
+header.top .top-link { color: var(--soft); text-decoration: none; font-weight: 600; font-size: 15px; }
+header.top .top-link:hover { color: var(--ink); }
+/* settings */
+.settings { max-width: 720px; padding-top: 30px; padding-bottom: 72px; }
+.settings h1 { font-size: 34px; line-height: 1.1; margin: 18px 0 24px; }
+.settings h2 { font-size: 17px; font-weight: 700; margin: 0 0 6px; font-family: inherit; }
+.settings section { border-top: 1px solid var(--line); padding-top: 20px; }
+.settings p { margin: 0 0 12px; line-height: 1.5; }
+.settings .browser { display: flex; align-items: center; gap: 10px; margin: 4px 0 12px 30px; }
+.settings .browser select { font: inherit; font-weight: 600; font-size: 15px; height: 40px; padding: 0 12px; border-radius: 6px;
+  border: 1.5px solid var(--line); background: var(--field); color: var(--ink); min-width: 200px; }
+.settings .browser select:disabled { opacity: .5; }
+.settings .saved { color: var(--soft); font-size: 14px; min-height: 20px; }
+.settings ul { margin: 0 0 12px; padding-left: 20px; line-height: 1.5; color: var(--soft); }
+
+/* details step */
+.details { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: clamp(28px, 5vw, 64px); padding-top: 34px; padding-bottom: 72px; }
+.details figure { margin: 0; }
+.details figure img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; border-radius: 6px; background: var(--band);
+  box-shadow: 0 1px 2px rgba(40,30,20,.12), 0 14px 26px -16px rgba(40,30,20,.5); }
+.details figure .file { aspect-ratio: 16 / 9; border-radius: 6px; background: var(--band); display: grid; place-items: center; text-align: center; padding: 24px; }
+.details figure .file svg.i { width: 36px; height: 36px; color: var(--soft); }
+.details figcaption { color: var(--soft); font-size: 14.5px; margin-top: 12px; }
+.details figcaption b { color: var(--ink); font-weight: 600; }
+.details h1 { font-size: 34px; line-height: 1.1; margin: 0 0 4px; }
+.details .lede { color: var(--soft); margin: 0 0 24px; }
+.fld { margin-bottom: 18px; max-width: 540px; }
+.fld > label { display: block; font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+.fld > label .opt { font-weight: 400; color: var(--soft); }
+.hint { color: var(--soft); font-size: 14px; margin-top: 6px; }
+.more { border-top: 1px solid var(--line); margin-top: 26px; padding-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 28px 40px; max-width: 780px; }
+.more h2 { font-size: 15px; font-weight: 700; margin: 0 0 2px; font-family: inherit; }
+.times { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: var(--soft); }
+.times input { width: 104px; font-variant-numeric: tabular-nums; }
+label.choice { display: flex; gap: 12px; align-items: flex-start; padding: 7px 0; cursor: pointer; border-radius: 4px; }
+label.choice input { appearance: none; margin: 3px 0 0; width: 18px; height: 18px; flex: none; border-radius: 50%; border: 1.5px solid var(--soft); background: var(--field); }
+label.choice input:checked { border-color: var(--act); background: radial-gradient(var(--act) 0 4px, var(--field) 4.5px); }
+label.choice input:focus { outline: none; box-shadow: none; }
+label.choice b { font-weight: 600; } label.choice span span { color: var(--soft); }
+.foot { display: flex; align-items: center; gap: 20px; margin-top: 30px; flex-wrap: wrap; }
+.foot button.primary { height: 52px; font-size: 16.5px; padding: 0 24px; }
+
+/* progress */
+.progress { max-width: 640px; margin: 34px auto 72px; }
+.progress h1 { font-size: 30px; margin: 0; line-height: 1.15; }
+ul.jobs { list-style: none; padding: 0; margin: 20px 0; }
+ul.jobs li { display: flex; align-items: center; gap: 12px; padding: 7px 0; color: var(--soft); }
+ul.jobs li.active { color: var(--ink); font-weight: 600; }
+ul.jobs li.done { color: var(--ink); }
+ul.jobs .dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line-strong); display: grid; place-items: center; flex: none; }
+ul.jobs .dot svg.i { width: 13px; height: 13px; stroke-width: 2.4; }
+ul.jobs li.done .dot { background: var(--act); border-color: var(--act); color: var(--act-ink); }
+ul.jobs li.active .dot { border-color: var(--act); border-top-color: transparent; animation: spin 1s linear infinite; }
+ul.jobs li.failed .dot, ul.jobs li.cancelled .dot { border-color: var(--bad); color: var(--bad); }
+ul.jobs .detail { margin-left: auto; font-weight: 400; color: var(--soft); font-size: 14px; font-variant-numeric: tabular-nums; }
+.bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin: -2px 0 4px 34px; }
+.bar > div { height: 100%; background: var(--act); transition: width .4s; }
+pre.log { white-space: pre-wrap; font-size: 12.5px; max-height: 320px; overflow: auto; background: var(--field); border: 1px solid var(--line); padding: 10px; border-radius: 6px; }
+details > summary { cursor: pointer; color: var(--soft); font-size: 14px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* sheet screen */
+.sheet-head { display: flex; align-items: center; gap: 12px 16px; padding-top: 4px; padding-bottom: 18px; flex-wrap: wrap; }
+.sheet-head h1 { font-size: 28px; margin: 0 0 0 8px; line-height: 1.15; }
+.sheet-head .who { color: var(--soft); }
+.sheet-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: clamp(28px, 4vw, 56px); align-items: start; padding-top: 22px; padding-bottom: 72px; }
+.stage { max-width: 760px; width: 100%; justify-self: center; }
+.page-tabs { display: flex; gap: 22px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+.page-tabs button { height: 38px; padding: 0; border: 0; border-radius: 0; background: none; color: var(--soft); font-weight: 600;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.page-tabs button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--act); }
+.spage { position: relative; background: var(--paper); box-shadow: var(--shadow-page); filter: var(--cover-dim); }
+.spage img { width: 100%; height: 100%; display: block; mix-blend-mode: var(--page-blend); filter: var(--page-filter); }
+.rings { position: absolute; inset: 0; pointer-events: none; }
+.ring { position: absolute; border: 2.5px solid #5c7041; border-radius: 4px; background: rgba(92,112,65,.10); margin: -3px; box-sizing: content-box; padding: 1px; }
+.side { display: flex; flex-direction: column; gap: 22px; position: sticky; top: 16px; }
+.side h2 { font-size: 24px; margin: 0 0 4px; }
+.side section + section { border-top: 1px solid var(--line); padding-top: 18px; }
+.warning { padding: 12px 14px; margin: 0 -14px; border-radius: 6px; font-size: 15px; position: relative; }
+.warning + .warning::before { content: ""; position: absolute; top: 0; left: 14px; right: 14px; border-top: 1px solid var(--line); }
+.warning.on { background: var(--act-soft); }
+.warning.on::before, .warning.on + .warning::before { display: none; }
+.warning.problem { background: var(--bad-soft); margin: 0 0 10px; }
+.warning.check > div:first-child { color: var(--ink); }
+.warning.note { padding: 6px 14px; color: var(--soft); font-size: 14px; }
+.warning .show { display: inline-block; margin-top: 6px; font-size: 14px; color: var(--act-text); text-decoration-color: currentColor; }
+.warning details { margin-top: 4px; font-size: 13.5px; color: var(--soft); }
+.side .acts { display: grid; gap: 10px; justify-items: start; }
+.side .acts h2 { margin: 0; }
+.side form { display: grid; gap: 10px; width: 100%; }
+.seg { display: inline-flex; border: 1.5px solid var(--line); border-radius: 6px; padding: 3px; background: var(--field); }
+.seg button { height: 34px; border: 0; border-radius: 4px; background: none; color: var(--soft); padding: 0 14px; }
+.seg button[aria-checked=true] { background: var(--act); color: var(--act-ink); }
+.theme-seg button { padding: 0 11px; gap: 6px; }
+@media (max-width: 760px) { .theme-seg .lbl { display: none; } }
+@media (max-width: 960px) { .sheet-layout { grid-template-columns: 1fr; } .side { position: static; } }
+@media (max-width: 760px) { .sheet-head h1 { order: -1; flex-basis: 100%; margin: 0; } .sheet-head .link { order: -2; flex-basis: 100%; } }
+@media print { header.top, .band, .side, .page-tabs { display: none !important; } }
+
+/* crop and masks */
+.crop { padding-top: 26px; padding-bottom: 60px; display: grid; gap: 16px; }
+.crop > * { min-width: 0; }
+.crop h1 { font-size: 32px; margin: 0 0 4px; line-height: 1.1; }
+.crop .lede { color: var(--soft); max-width: 75ch; margin: 0; }
+.picture { position: relative; user-select: none; -webkit-user-select: none; touch-action: none; border-radius: 6px; overflow: hidden;
+  background: #000; cursor: crosshair; line-height: 0; margin: 0 auto; width: 100%; }
+.picture img, .picture canvas { width: 100%; display: block; pointer-events: none; }
+.box-layer { position: absolute; inset: 0; }
+.box { position: absolute; border: 2px solid var(--box); box-shadow: 0 0 0 1px rgba(0,0,0,.5); cursor: move; }
+.box.mask { border-color: var(--mask); }
+.box .handle { position: absolute; width: 12px; height: 12px; background: #fff; border: 2px solid var(--box); border-radius: 3px; }
+.box.mask .handle { border-color: var(--mask); }
+.handle[data-edge=nw] { left: -7px; top: -7px; cursor: nwse-resize; }  .handle[data-edge=n] { left: calc(50% - 6px); top: -7px; cursor: ns-resize; }
+.handle[data-edge=ne] { right: -7px; top: -7px; cursor: nesw-resize; } .handle[data-edge=e] { right: -7px; top: calc(50% - 6px); cursor: ew-resize; }
+.handle[data-edge=se] { right: -7px; bottom: -7px; cursor: nwse-resize; } .handle[data-edge=s] { left: calc(50% - 6px); bottom: -7px; cursor: ns-resize; }
+.handle[data-edge=sw] { left: -7px; bottom: -7px; cursor: nesw-resize; } .handle[data-edge=w] { left: -7px; top: calc(50% - 6px); cursor: ew-resize; }
+.box-layer.hide .box { display: none; }
+.moments { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 8px; }
+.moment { flex: none; height: auto; border: 2px solid transparent; border-radius: 6px; padding: 0; background: none; flex-direction: column;
+  gap: 2px; font-size: 12.5px; font-weight: 500; color: var(--soft); line-height: 1.3; }
+.moment img { width: 112px; border-radius: 4px; display: block; }
+.moment.on { border-color: var(--act); color: var(--ink); }
+.moment span { padding-bottom: 2px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 2px 2px 10px; border-radius: 6px; background: var(--field);
+  border: 1.5px solid var(--line); font-size: 14px; font-weight: 600; }
+.chip.on { border-color: var(--mask); }
+.chip button { height: 26px; width: 26px; padding: 0; border: 0; background: none; color: var(--soft); }
+.chip button svg.i { width: 14px; height: 14px; }
+.warnline { color: var(--chk); font-weight: 600; }
+
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--ground);
+  padding: 10px 16px; border-radius: 6px; font-size: 15px; z-index: 10; max-width: calc(100vw - 32px); }
+
+@media (max-width: 760px) {
+  .paste { flex-direction: column; } .paste button { height: 54px; }
+  .cont { flex-wrap: wrap; } .cont .lbl { width: 100%; }
+  .lib .hd input { width: 100%; margin-left: 0; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 32px 22px; }
+  .details { grid-template-columns: 1fr; }
+  .more { grid-template-columns: 1fr; }
+}
+/* play mode */
+body.playing { overflow: hidden; }
+body.playing > .band:first-of-type { display: none; }
+.play { position: fixed; inset: 0; background: var(--ground); z-index: 5; user-select: none; -webkit-user-select: none;
+  display: flex; flex-direction: column; }
+.play-main { position: relative; flex: 1; min-height: 0; }
+.play-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 16px; cursor: default; }
+.play-page { flex: none; background: var(--paper); box-shadow: var(--shadow-page); filter: var(--cover-dim); overflow: hidden;
+  transition: width .2s cubic-bezier(.2,.8,.2,1), height .2s cubic-bezier(.2,.8,.2,1); }
+.play-page img { width: 100%; height: 100%; display: block; object-fit: contain; mix-blend-mode: var(--page-blend); filter: var(--page-filter); }
+.play-page.halfway { position: relative; }
+.play-page.halfway img { position: absolute; inset: 0; }
+.half-line { position: absolute; left: 3%; right: 3%; border-top: 2px dashed var(--line-strong); pointer-events: none; }
+.play .edge { position: absolute; top: 0; bottom: 0; width: 20%; height: auto; border: 0; border-radius: 0; background: none; color: var(--soft);
+  display: flex; align-items: center; padding: 0 22px; opacity: 0; transition: opacity .2s; cursor: pointer; }
+.play .edge.l { left: 0; justify-content: flex-start; } .play .edge.r { right: 0; justify-content: flex-end; }
+.play .edge svg.i { width: 34px; height: 34px; stroke-width: 1.4; }
+.play .edge:hover:not(:disabled) { opacity: .7; }
+.play .edge:disabled { cursor: default; }
+/* the toolbar has its own strip above the pages and never covers them; in full screen it is gone until the mouse moves */
+.play-bar { flex: none; min-height: 60px; display: flex; align-items: center; gap: 6px 8px; padding: 8px 16px;
+  flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.play:not(.bar-on) .play-bar { display: none; }
+.play-bar .t { font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; margin-left: 6px; }
+.play-bar .who { color: var(--soft); white-space: nowrap; }
+.play-bar .count { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 64px; text-align: center; }
+.play-bar button.quiet[aria-pressed=true] { background: var(--act-soft); color: var(--act-text); border-color: transparent; }
+.play-bar .vr { width: 1px; height: 26px; background: var(--line-strong); margin: 0 4px; }
+.play-bar .seg button { height: 32px; }
+.play-corner { position: absolute; right: 14px; bottom: 12px; font-weight: 700; font-size: 13.5px; font-variant-numeric: tabular-nums;
+  color: var(--soft); background: var(--band); padding: 3px 10px; border-radius: 5px; opacity: .85; transition: opacity .2s; pointer-events: none; }
+.play.bar-on .play-corner, .play-corner.off { opacity: 0; }
+.play-stage.nudge-r { animation: nudge-r .3s ease-out; } .play-stage.nudge-l { animation: nudge-l .3s ease-out; }
+@keyframes nudge-r { 40% { transform: translateX(-8px); } } @keyframes nudge-l { 40% { transform: translateX(8px); } }
+/* play along: the video in a panel beside the pages (nothing ever over the YouTube player), the transport in its
+   own strip at the bottom; the pages fit the space that is left */
+.play-main { display: flex; }
+.play-sheet { position: relative; flex: 1; min-width: 0; }
+.play-video { flex: none; width: var(--video-w, 420px); display: flex; flex-direction: column; gap: 14px; padding: 12px 16px 12px 4px; overflow-y: auto; }
+.play-video .side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+/* above the pages: the picture at --video-h (never under 200 px), the controls beside it (under it when narrow) */
+.play-main.above { flex-direction: column; }
+.play-main.above .play-video { order: -2; width: auto; flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 12px 20px;
+  padding: 12px 16px 4px; overflow: visible; }
+.play-main.above .divider { order: -1; }
+.play-main.above .play-video .screen { flex: none; height: var(--video-h, 240px); width: calc(var(--video-h, 240px) * 16 / 9);
+  max-width: 100%; aspect-ratio: auto; }
+.play-main.above .play-video .side { flex: 1 1 320px; }
+/* hidden (the kept copy only): no picture, the controls in a narrow column; the video goes on playing */
+.play-main.video-hidden .play-video .screen { display: none; }
+/* the divider between the pages and the video: drag to size the video */
+.divider { flex: none; position: relative; width: 12px; cursor: col-resize; touch-action: none; }
+.divider::after { content: ''; position: absolute; top: 50%; left: 50%; width: 4px; height: 44px; margin: -22px 0 0 -2px; border-radius: 2px;
+  background: var(--line-strong); }
+.divider:hover::after, .divider.dragging::after { background: var(--act); }
+.play-main.above .divider { width: auto; height: 12px; cursor: row-resize; }
+.play-main.above .divider::after { width: 44px; height: 4px; margin: -2px 0 0 -22px; }
+.dragging-divider, .dragging-divider * { cursor: inherit; user-select: none; }
+.dragging-divider iframe { pointer-events: none; }     /* the drag keeps going over the YouTube player */
+.place-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.place-row .lbl { color: var(--soft); font-size: 14px; }
+.place-row .seg button { height: 34px; padding: 0 12px; }
+.play-video .screen { position: relative; width: 100%; aspect-ratio: 16 / 9; min-height: 200px; background: #000; border-radius: 4px;
+  overflow: hidden; box-shadow: 0 1px 2px rgba(40,30,20,.12), 0 14px 26px -16px rgba(40,30,20,.5); }
+.play-video .screen > iframe, .play-video .screen > video, .play-video .screen > div { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+.play-video .screen .wait { display: grid; place-items: center; color: #b1ac9a; font-size: 14.5px; text-align: center; padding: 16px; }
+.play-video .src { font-size: 13.5px; color: var(--soft); display: flex; gap: 6px 12px; flex-wrap: wrap; align-items: baseline; }
+.play-video .src a { color: var(--soft); text-underline-offset: 3px; text-decoration-color: var(--line-strong); }
+.play-video .note { font-size: 14px; line-height: 1.4; }
+.play-transport { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px 12px; }
+.play-transport .playpause { width: 44px; height: 44px; padding: 0; border-radius: 50%; }
+.play-transport .playpause svg.i { width: 20px; height: 20px; }
+.play-transport .time { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 14.5px; color: var(--soft); }
+.play-transport .follow[aria-pressed=true] { background: var(--act-soft); color: var(--act-text); border-color: transparent; }
+.scrub { grid-column: 1 / -1; position: relative; height: 40px; cursor: pointer; touch-action: none; }
+.scrub .track { position: absolute; left: 0; right: 0; top: 18px; height: 4px; border-radius: 2px; background: var(--line-strong); }
+.scrub .done { position: absolute; left: 0; top: 18px; height: 4px; border-radius: 2px; background: var(--act); }
+.scrub .tick { position: absolute; top: 13px; width: 1.5px; height: 14px; margin-left: -.75px; background: var(--soft); opacity: .55; }
+.scrub .knob { position: absolute; top: 12px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: var(--act);
+  border: 2px solid var(--field); }
+.scrub:focus-visible { outline: 2.5px solid var(--act); outline-offset: 2px; border-radius: 4px; }
+.play-transport .speed { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.play-transport .speed .lbl { color: var(--soft); font-size: 14px; }
+.play-transport .seg button { height: 34px; padding: 0 12px; font-variant-numeric: tabular-nums; }
+.play-transport select { font: inherit; font-weight: 600; font-size: 14.5px; height: 40px; padding: 0 12px; border-radius: 6px;
+  border: 1.5px solid var(--line); background: var(--field); color: var(--ink); }
+/* follow: the line being played tinted under the notes; where the timing comes from a cursor in the video, the
+   measure ringed and a thin playhead moving through it (laid over the page as hairlines, never over the notes' area
+   as a fill) */
+.play-page { position: relative; }
+.play-page > img { position: relative; z-index: 1; }
+.play-page.halfway > img { position: absolute; }
+.play-page .half-line { z-index: 2; }
+.follow-line { position: absolute; z-index: 0; background: var(--follow-tint); border-radius: 3px; pointer-events: none; }
+.follow-ring { position: absolute; z-index: 2; border: 2px solid var(--follow-mark); border-radius: 4px; pointer-events: none; opacity: .8; }
+.follow-head { position: absolute; z-index: 2; width: 2px; margin-left: -1px; background: var(--follow-mark); pointer-events: none; opacity: .9; }
+.play-video .note p { margin: 0 0 6px; }
+.play-video .note .note-actions { margin: 8px 0 4px; display: flex; gap: 8px; flex-wrap: wrap; }
+.play-video .note details summary { cursor: pointer; color: var(--soft); font-size: 13.5px; }
+.play-video .note details pre { white-space: pre-wrap; word-break: break-word; font-size: 12.5px; margin: 6px 0 0; color: var(--soft); }
+.loop-mark { position: absolute; z-index: 0; background: var(--loop-tint); border-top: 2px solid var(--loop-mark);
+  border-bottom: 2px solid var(--loop-mark); pointer-events: none; }
+.loop-mark.from { border-left: 2px solid var(--loop-mark); }
+.loop-mark.to { border-right: 2px solid var(--loop-mark); }
+.loop-mark.choosing { opacity: .7; }
+.play.along-on .play-page { cursor: pointer; touch-action: none; }
+.scrub .loopband { position: absolute; top: 14px; height: 12px; border-radius: 3px; background: var(--loop-tint);
+  border: 1.5px solid var(--loop-mark); pointer-events: none; }
+.loop-chip { grid-column: 1 / -1; justify-self: start; display: inline-flex; align-items: center; gap: 2px; padding: 0 4px 0 12px;
+  min-height: 34px; border-radius: 17px; background: var(--loop-tint); color: var(--ink); font-weight: 600; font-size: 14px;
+  border: 1.5px solid var(--loop-mark); }
+.loop-chip button { min-width: 0; height: 30px; padding: 0 8px; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; border-radius: 15px; }
+.loop-chip button:hover { background: var(--loop-tint); }
+.loop-chip .x svg.i { width: 14px; height: 14px; }
+.loop-chip { flex-wrap: wrap; row-gap: 4px; padding-right: 8px; }
+.loop-pause { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; padding-left: 10px; border-left: 1.5px solid var(--loop-mark); }
+.loop-pause .lbl { font-weight: 500; color: var(--soft); font-size: 13.5px; margin-right: 4px; }
+.loop-chip .loop-pause button { font-weight: 600; padding: 0 9px; }
+.loop-chip .loop-pause button[aria-checked=true] { background: var(--loop-mark); color: var(--field); }
+.loop-hint { grid-column: 1 / -1; color: var(--soft); font-size: 13.5px; }
+@media print { .follow-line, .follow-ring, .follow-head, .loop-mark { display: none; } }
+@media (max-width: 900px) { .play-bar .who, .play-bar .vr { display: none; } }
+@media (max-width: 1600px) { .play-bar .theme-seg .lbl, .play-bar .open-pdf .lbl { display: none; } .play-bar .theme-seg button { padding: 0 9px; } }
+
+@media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="band"><header class="top">
+  <a href="#/" class="logo" aria-label="Vid2Tab, your sheets"><svg viewBox="0 0 32 36" aria-hidden="true">
+    <path d="M16 34C9 26 2 18 2 10 2 4 8 2 16 2s14 2 14 8c0 8-7 16-14 24z" fill="var(--mark)"/>
+    <path d="M12.6 9.6v9.8c0 .8.9 1.3 1.6.8l7.3-4.9c.6-.4.6-1.2 0-1.6l-7.3-4.9c-.7-.5-1.6 0-1.6.8z" fill="var(--mark-cut)"/></svg>Vid2Tab</a>
+  <span class="spacer"></span>
+  <a href="#/settings" class="top-link">Settings</a>
+  <span id="theme-slot"></span>
+</header></div>
+<main id="app"></main>
+<div id="toast" class="toast hidden" role="status"></div>
+
+<script>
+'use strict';
+const $ = (sel, root = document) => root.querySelector(sel);
+const app = $('#app');
+
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs || {})) {
+    if (value == null || value === false) continue;
+    if (key.startsWith('on')) el.addEventListener(key.slice(2), value);
+    else if (key === 'class') el.className = value;
+    else if (key === 'html') el.innerHTML = value;
+    else el.setAttribute(key, value === true ? '' : value);
+  }
+  for (const child of children.flat()) {
+    if (child == null || child === false) continue;
+    el.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return el;
+}
+
+// One drawn icon set (18 px, 1.6 stroke).
+const ICONS = {
+  back: 'M10 4L5 9l5 5M5 9h9', next: 'M8 4l5 5-5 5M13 9H4',
+  download: 'M9 3v8m-3.5-3.5L9 11l3.5-3.5M3.5 14.5h11', print: 'M5 7V3h8v4M5 12.5H3.5V7h11v5.5H13M5 10h8v5H5z',
+  play: 'M6 4.2v9.6c0 .6.7 1 1.2.6l7-4.8c.4-.3.4-.9 0-1.2l-7-4.8C6.7 3.2 6 3.6 6 4.2z', trash: 'M3 5h12M7.5 5V3.5h3V5M4.8 5l.7 10h7l.7-10M7.6 8v4.5M10.4 8v4.5',
+  edit: 'M11.5 3.5l3 3L7 14H4v-3z', file: 'M5 2.5h5.5L14 6v9.5H5zM10.5 2.5V6H14M7.5 9.5l3 1.8-3 1.8z', close: 'M5 5l8 8M13 5l-8 8',
+  prev: 'M11 3.5L5.5 9l5.5 5.5', full: 'M3 7V3h4M11 3h4v4M15 11v4h-4M7 15H3v-4', pages: 'M2.5 3.5h5.5v11H2.5zM10 3.5h5.5v11H10z',
+  check: 'M4 9.5l3.2 3L14 5.5', sun: 'M9 5.5a3.5 3.5 0 110 7 3.5 3.5 0 010-7zM9 1.5v1.5M9 15v1.5M1.5 9H3M15 9h1.5M3.7 3.7l1 1M13.3 13.3l1 1M3.7 14.3l1-1M13.3 4.7l1-1',
+  moon: 'M14.5 10.5A6 6 0 017.5 3.5a6 6 0 107 7z', half: 'M4.5 2h9v14h-9zM4.5 9h9M7 5.5h4M7 12.5h4', night: 'M14.5 10.5A6 6 0 017.5 3.5a6 6 0 107 7zM13.2 1.8v3M11.7 3.3h3', auto: 'M9 2.5a6.5 6.5 0 100 13zM9 2.5a6.5 6.5 0 010 13', search: 'M8 3a5 5 0 110 10A5 5 0 018 3zM11.7 11.7L15 15',
+  pause: 'M6 4v10M12 4v10', video: 'M2.5 4.5h9.5v9H2.5zM12 8l3.5-2v6L12 10',
+};
+const icon = name => h('span', { 'aria-hidden': 'true', style: 'display:contents',
+  html: `<svg class="i" viewBox="0 0 18 18"><path d="${ICONS[name]}"/></svg>` });
+
+async function api(path, body) {
+  const options = body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                              body: JSON.stringify(body) };
+  const response = await fetch(path, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) { const error = new Error(data.error || response.statusText); error.field = data.field; throw error; }
+  return data;
+}
+
+function toast(text) {
+  const el = $('#toast');
+  el.textContent = text; el.classList.remove('hidden');
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.add('hidden'), 4000);
+}
+
+const store = {
+  get(key) { try { return localStorage.getItem('vid2tab.' + key); } catch (e) { return null; } },
+  set(key, value) { try { value == null ? localStorage.removeItem('vid2tab.' + key) : localStorage.setItem('vid2tab.' + key, value); } catch (e) {} },
+};
+const plural = (n, word, many = word + 's') => `${n} ${n === 1 ? word : many}`;
+const day = seconds => new Date(seconds * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+const enc = encodeURIComponent;
+const clock = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
+// ---- theme: Auto (the Mac's light or dark), Light, Dark (dimmed paper), Night (light notes on dark) ----
+// One setting for the whole app; every switch on screen (header, play mode toolbar) shows and changes it.
+
+const THEMES = [['auto', 'Auto', 'auto', 'As your Mac: light or dark'], ['light', 'Light', 'sun', 'Light'],
+  ['dark', 'Dark', 'moon', 'Dark, with the paper dimmed'], ['night', 'Night', 'night', 'Night: light notes on a dark page']];
+const theme = () => { const t = store.get('theme'); return THEMES.some(([v]) => v === t) ? t : 'auto'; };
+function setTheme(value) {
+  store.set('theme', value === 'auto' ? null : value);
+  if (value === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = value;
+  document.querySelectorAll('.theme-seg button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.theme === value)));
+}
+function themeSwitch() {
+  return h('span', { class: 'seg theme-seg', role: 'radiogroup', 'aria-label': 'Colours' }, ...THEMES.map(([value, label, iconName, title]) =>
+    h('button', { type: 'button', role: 'radio', 'data-theme': value, 'aria-checked': String(theme() === value), title, 'aria-label': label,
+      onclick: () => setTheme(value) }, icon(iconName), h('span', { class: 'lbl' }, label))));
+}
+$('#theme-slot').replaceWith(themeSwitch());
+setTheme(theme());
+addEventListener('storage', e => { if (e.key === 'vid2tab.theme') setTheme(theme()); });   // changed in another tab
+
+// ---- screens ----------------------------------------------------------------------------------
+
+const screens = {};
+let leave = null;      // cleanup of the current screen (timers, listeners)
+
+async function route() {
+  if (leave) { leave(); leave = null; }
+  document.title = 'Vid2Tab';
+  const [, screen = '', ...args] = location.hash.split('/');
+  app.replaceChildren();
+  try {
+    await (screens[screen] || screens[''])(...args.map(decodeURIComponent));
+  } catch (error) {
+    app.replaceChildren(h('div', { class: 'wrap empty' }, h('h2', { class: 'serif' }, 'This page could not be shown'),
+      h('p', {}, error.message), h('a', { class: 'button', href: '#/' }, icon('back'), 'Your sheets')));
+  }
+  window.scrollTo(0, 0);
+}
+window.addEventListener('hashchange', route);
+
+function openLink(sheet) {
+  if (sheet.source === 'pdf') return '#/play/' + enc(sheet.name);         // an opened PDF: nothing to check
+  return (sheet.state === 'done' || sheet.state === 'failed' ? '#/sheet/' : '#/make/') + enc(sheet.name);
+}
+
+// Open a PDF: sheet music that is already a PDF joins Your sheets (tagged PDF) and opens in play mode.
+function pickPdf() {
+  const picker = h('input', { type: 'file', accept: 'application/pdf,.pdf', class: 'hidden' });
+  picker.addEventListener('change', () => { if (picker.files[0]) openPdf(picker.files[0]); picker.remove(); });
+  document.body.append(picker);
+  picker.click();
+}
+async function openPdf(file) {
+  if (!/\.pdf$/i.test(file.name)) { toast('That is not a PDF file.'); return; }
+  try {
+    toast(`Opening “${file.name}”…`);
+    const { name } = await api('/api/pdfs', { name: file.name });
+    const response = await fetch(`/api/pdfs/${enc(name)}/file`, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: file });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || response.statusText);
+    $('#toast').classList.add('hidden');
+    if (location.hash === '#/play/' + enc(name)) route(); else location.hash = '#/play/' + enc(name);
+  } catch (err) { toast(err.message); }
+}
+
+// A sheet's first page as paper, with one or two pages tucked behind for longer sheets.
+function cover(sheet, { link = true, busy = false } = {}) {
+  const pages = sheet.pages || 1;
+  const inner = [pages > 2 && h('span', { class: 'bk b2' }), pages > 1 && h('span', { class: 'bk b1' })];
+  const face = sheet.pdf
+    ? h('span', { class: 'pg' }, h('img', { src: `/files/${enc(sheet.name)}/thumb.png?v=${sheet.updated}`, alt: '', loading: 'lazy' }))
+    : h('span', { class: 'pg' }, h('span', { class: 'none' + (busy ? ' busy' : '') }, busy ? 'Being made…' : 'No sheet yet'));
+  return link ? h('a', { class: 'cover', href: openLink(sheet), 'aria-label': 'Open ' + sheet.title }, inner, face)
+              : h('span', { class: 'cover' }, inner, face);
+}
+
+function statusLine(sheet) {
+  if (sheet.state === 'running') return h('span', { class: 'status busy' }, 'Being made');
+  if (sheet.state === 'failed' || sheet.counts.problem) return h('span', { class: 'status bad' }, 'Could not be made');
+  if (sheet.state !== 'done') return h('span', { class: 'status check' }, 'Not finished');
+  if (sheet.counts.check) return h('span', { class: 'status check' }, sheet.counts.check + ' to check');
+  return null;
+}
+
+// ---- home ---------------------------------------------------------------------------------
+
+let pending = null;    // the video chosen on the home screen, for the details step: { url } or { file }
+
+screens[''] = async function home() {
+  const field = h('input', { type: 'url', id: 'url', placeholder: 'Paste a YouTube link', autocomplete: 'off', 'aria-label': 'YouTube link' });
+  const error = h('div', { class: 'error hidden', id: 'url-error' });
+  field.setAttribute('aria-describedby', 'url-error');
+  const picker = h('input', { type: 'file', accept: 'video/*,.mkv,.webm,.avi,.m4v,.mov,.mp4', class: 'hidden' });
+  const go = url => {
+    error.classList.add('hidden'); field.classList.remove('bad');
+    if (!url) { showError('Paste a link to a YouTube video first.'); return; }
+    if (!/youtu\.?be|^[\w-]{11}$/.test(url)) { showError('That is not a YouTube video link.'); return; }
+    pending = null; location.hash = '#/new/' + enc(url);     // the link stays in the address, so a reload keeps it
+  };
+  const showError = text => { error.textContent = text; error.classList.remove('hidden'); field.classList.add('bad'); field.focus(); };
+  const useFile = file => { pending = { file }; location.hash = '#/new'; };
+  picker.addEventListener('change', () => picker.files[0] && useFile(picker.files[0]));
+  const form = h('form', { class: 'paste', novalidate: true }, field, h('button', { class: 'primary', type: 'submit' }, 'Next', icon('next')));
+  form.addEventListener('submit', e => { e.preventDefault(); go(field.value.trim()); });
+  field.addEventListener('paste', () => setTimeout(() => { if (/youtu\.?be/.test(field.value)) go(field.value.trim()); }, 0));
+
+  const continueStrip = h('div');
+  const list = h('div', { class: 'grid' });
+  const search = h('input', { type: 'search', placeholder: 'Find a song', 'aria-label': 'Find a song' });
+  const count = h('span', { class: 'muted' });
+  app.append(
+    h('div', { class: 'band' }, h('section', { class: 'wrap start' },
+      h('h1', { class: 'serif' }, 'What would you like to play?'), form, error, picker,
+      h('div', { class: 'alt' }, 'Video on your Mac? ', h('button', { type: 'button', class: 'link', onclick: () => picker.click() }, 'Choose a file'),
+        ' or drop it anywhere on this page.'),
+      h('div', { class: 'alt' }, 'Sheet music already as a PDF? ', h('button', { type: 'button', class: 'link', onclick: pickPdf }, 'Open a PDF'),
+        ' to play from it.'))),
+    continueStrip,
+    h('section', { class: 'wrap lib' }, h('div', { class: 'hd' }, h('h2', { class: 'serif' }, 'Your sheets'), count, search), list));
+  field.focus();
+
+  // drop a video anywhere on the page
+  const over = e => { if ([...e.dataTransfer.types].includes('Files')) { e.preventDefault(); document.body.classList.add('dragging'); } };
+  const out = e => { if (!e.relatedTarget) document.body.classList.remove('dragging'); };
+  const drop = e => {
+    if (![...e.dataTransfer.types].includes('Files')) return;
+    e.preventDefault(); document.body.classList.remove('dragging');
+    const files = [...e.dataTransfer.files];
+    const file = files.find(f => f.type.startsWith('video/') || /\.(mkv|webm|avi|m4v|mov|mp4)$/i.test(f.name));
+    const pdf = files.find(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+    if (file) useFile(file); else if (pdf) openPdf(pdf); else toast('That is not a video or a PDF file.');
+  };
+  document.addEventListener('dragover', over); document.addEventListener('dragleave', out); document.addEventListener('drop', drop);
+  leave = () => { document.removeEventListener('dragover', over); document.removeEventListener('dragleave', out); document.removeEventListener('drop', drop);
+    document.body.classList.remove('dragging'); };
+
+  const sheets = await api('/api/sheets');
+  const last = sheets.find(s => s.name === store.get('last') && s.pdf);
+  if (last) continueStrip.replaceWith(h('section', { class: 'wrap cont' },
+    h('span', { class: 'lbl' }, 'Continue playing'), cover(last),
+    h('div', { style: 'min-width:0' }, h('a', { class: 't serif', href: openLink(last) }, last.title),
+      h('div', { class: 'meta' }, [last.artist, last.pages && plural(last.pages, 'page')].filter(Boolean).join(' · '),
+        last.counts.check ? [' · ', h('span', { class: 'status check' }, last.counts.check + ' to check')] : null)),
+    h('span', { class: 'spacer' }),
+    last.source !== 'pdf' && h('a', { class: 'button', href: '#/sheet/' + enc(last.name) }, 'Open sheet'),
+    h('a', { class: 'button primary', href: '#/play/' + enc(last.name) }, icon('play'), 'Play')));
+  count.textContent = sheets.length ? `${plural(sheets.length, 'song')} · newest first` : '';
+  search.classList.toggle('hidden', sheets.length < 2);
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    const shown = sheets.filter(s => !q || (s.title + ' ' + s.artist).toLowerCase().includes(q));
+    list.replaceChildren(...shown.map(sheetCard));
+    if (!shown.length) list.append(h('div', { class: 'empty', style: 'grid-column:1/-1' },
+      sheets.length ? `No song matches “${search.value.trim()}”.`
+        : [h('h2', { class: 'serif' }, 'No sheets yet'), 'Paste a YouTube link above to make your first one.']));
+  };
+  search.addEventListener('input', draw);
+  draw();
+};
+
+function sheetCard(sheet) {
+  const card = h('article', { class: 'sheet' });
+  const acts = h('div', { class: 'acts' },
+    sheet.pdf && h('a', { class: 'button', href: '#/play/' + enc(sheet.name), title: 'Play', 'aria-label': 'Play ' + sheet.title }, icon('play')),
+    sheet.pdf && h('a', { class: 'button', href: `/files/${enc(sheet.name)}/sheet.pdf?download=1`, title: 'Download the PDF', 'aria-label': 'Download the PDF of ' + sheet.title }, icon('download')),
+    h('button', { type: 'button', title: 'Delete', 'aria-label': 'Delete ' + sheet.title, onclick: () => askDelete() }, icon('trash')));
+  const askDelete = () => {
+    const keep = h('button', { type: 'button', onclick: () => confirmRow.replaceWith(acts) }, 'Keep');
+    const confirmRow = h('div', { class: 'confirm' }, 'Delete this sheet?',
+      h('button', { type: 'button', class: 'danger', onclick: async () => {
+        try { await api(`/api/sheets/${enc(sheet.name)}/delete`, {}); toast(`“${sheet.title}” was deleted. It is kept in the Trash folder of your sheets folder.`); route(); }
+        catch (err) { toast(err.message); }
+      } }, 'Delete'), keep);
+    acts.replaceWith(confirmRow); keep.focus();
+  };
+  card.append(cover(sheet, { busy: sheet.state === 'running' }),
+    h('a', { class: 't serif', href: openLink(sheet) }, sheet.title),
+    h('div', { class: 'a', title: sheet.artist }, sheet.artist || ' '),
+    h('div', { class: 'm' }, sheet.pages ? h('span', {}, plural(sheet.pages, 'page')) : null,
+      sheet.source === 'pdf' ? h('span', { class: 'tag', title: 'A PDF you opened: play mode only' }, 'PDF') : statusLine(sheet)),
+    acts);
+  return card;
+}
+
+// ---- the steps of a new sheet ----------------------------------------------------------------
+
+const STEP_NAMES = ['Details', 'Music area', 'Watermarks', 'Make the sheet'];
+function stepsBar(active, back) {
+  return h('div', { class: 'band' }, h('nav', { class: 'wrap steps-bar', 'aria-label': 'Steps' }, back,
+    h('ol', {}, STEP_NAMES.map((name, i) => h('li', { class: i + 1 === active ? 'on' : i + 1 < active ? 'done' : '',
+      'aria-current': i + 1 === active ? 'step' : null },
+      h('span', { class: 'num' }, i + 1 < active ? icon('check') : String(i + 1)), h('span', { class: 'lbl' }, name))))));
+}
+const backLink = (href, text) => h('a', { class: 'link', href, style: 'display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:var(--soft)' }, icon('back'), text);
+
+// Settings: the app's own (settings.json in the sheets folder), not a sheet's
+const SIGN_IN = 'Use my browser\u2019s YouTube sign-in for downloads';
+const BROWSER_NAMES = { chrome: 'Google Chrome', safari: 'Safari', firefox: 'Firefox', edge: 'Microsoft Edge', brave: 'Brave',
+  chromium: 'Chromium', opera: 'Opera', vivaldi: 'Vivaldi' };
+const settingsLink = (text = 'Open Settings') => h('a', { class: 'button quiet', href: '#/settings' }, text);
+screens.settings = async function settingsScreen() {
+  document.title = 'Settings · Vid2Tab';
+  let now = await api('/api/settings');
+  const saved = h('div', { class: 'saved', role: 'status' });
+  const select = h('select', { 'aria-label': 'Browser' }, ...now.browsers.map(b => h('option', { value: b }, BROWSER_NAMES[b] || b)));
+  select.value = now.youtube_cookies || 'chrome';
+  const off = h('input', { type: 'radio', name: 'yt', value: 'off', checked: !now.youtube_cookies });
+  const on = h('input', { type: 'radio', name: 'yt', value: 'on', checked: !!now.youtube_cookies });
+  const save = async () => {
+    select.disabled = !on.checked;
+    try {
+      now = await api('/api/settings', { youtube_cookies: on.checked ? select.value : null });
+      saved.textContent = now.youtube_cookies ? `Saved: downloads use ${BROWSER_NAMES[now.youtube_cookies]}\u2019s YouTube sign-in.` : 'Saved: downloads use no sign-in.';
+    } catch (err) { saved.textContent = err.message; }
+  };
+  [off, on].forEach(r => r.addEventListener('change', save));
+  select.addEventListener('change', save);
+  select.disabled = !on.checked;
+  app.append(h('div', { class: 'wrap settings' }, backLink('#/', 'Your sheets'),
+    h('h1', { class: 'serif' }, 'Settings'),
+    h('section', {},
+      h('h2', {}, 'YouTube downloads'),
+      h('p', { class: 'muted' }, 'YouTube sometimes stops downloads with \u201cSign in to confirm you\u2019re not a bot\u201d. ',
+        'With this on, the downloader uses the YouTube sign-in of the browser you choose, so YouTube treats the download as yours.'),
+      h('div', { role: 'radiogroup', 'aria-label': 'YouTube downloads' },
+        h('label', { class: 'choice' }, off, h('span', {}, h('b', {}, 'Off'), h('br'), h('span', {}, 'Downloads use no sign-in (the default).'))),
+        h('label', { class: 'choice' }, on, h('span', {}, h('b', {}, SIGN_IN), h('br'), h('span', {}, 'Be signed in to YouTube in that browser.')))),
+      h('div', { class: 'browser' }, h('span', { class: 'muted' }, 'Browser'), select),
+      saved,
+      h('p', {}, h('b', {}, 'Privacy. '), 'Your browser\u2019s cookies are read here on this computer, only while a video or its sound downloads, ',
+        'and are sent only to YouTube. Vid2Tab does not keep a copy of them or send them anywhere else.'),
+      h('ul', {},
+        h('li', {}, 'The first time, macOS may ask for permission: Chrome, Edge, Brave and other Chromium browsers ask to use the keychain (\u201cChrome Safe Storage\u201d); Safari needs Full Disk Access for the app that runs Vid2Tab (Terminal). Firefox usually needs neither.'),
+        h('li', {}, 'Used for new sheets, getting a video again, reading a video\u2019s details and the sound for play along.'),
+        h('li', {}, 'Downloads then count as your account\u2019s; turn it off again once the block has cleared if you prefer.')))));
+};
+
+screens.new = async function detailsScreen(link) {
+  if (link) pending = { url: link };
+  if (!pending) { location.hash = '#/'; return; }
+  const { url, file } = pending;
+  document.title = 'New sheet · Vid2Tab';
+  const fields = {};
+  const errors = {};
+  const input = (name, attrs = {}) => (fields[name] = h('input', { type: 'text', name, id: name, autocomplete: 'off', ...attrs }));
+  const fld = (name, label, el, hint) => h('div', { class: 'fld' }, h('label', { for: name }, label), el,
+    hint, errors[name] = h('div', { class: 'error hidden', id: name + '-error' }));
+  const titleHint = h('div', { class: 'hint' }, 'Printed at the top of page 1 and used as the PDF’s name.');
+  const artistHint = h('div', { class: 'hint' }, 'Printed under the title.');
+  const notice = h('div');
+  const go = h('button', { class: 'primary', type: 'submit' }, 'Next: choose the music area', icon('next'));
+  const layout = value => h('label', { class: 'choice' }, h('input', { type: 'radio', name: 'layout', value, checked: value === 'as played' }),
+    h('span', {}, h('b', {}, value === 'as played' ? 'As played' : 'As written'), h('br'),
+      h('span', {}, value === 'as played' ? 'Every page the video shows, in order.' : 'A page the video shows again (repeat, D.C., D.S.) is printed once.')));
+  const picture = h('figure', {}, file
+    ? h('div', { class: 'file' }, h('div', {}, icon('file'), h('div', { style: 'font-weight:600;margin-top:8px;word-break:break-all' }, file.name),
+        h('div', { class: 'muted small' }, `${(file.size / 1e6).toFixed(file.size < 1e7 ? 1 : 0)} MB, on this Mac`)))
+    : h('div', { class: 'file' }, h('div', { class: 'muted' }, 'Reading the video…')));
+  const form = h('form', { novalidate: true },
+    h('h1', { class: 'serif' }, 'Check the details'),
+    h('p', { class: 'lede' }, file ? 'We used the file’s name as the title. Change anything you like.' : 'Reading the title from YouTube…'),
+    notice,
+    fld('title', 'Title', input('title', { placeholder: 'Song title', 'aria-describedby': 'title-error' }), titleHint),
+    fld('artist', h('span', {}, 'Artist ', h('span', { class: 'opt' }, '(optional)')), input('artist', { placeholder: 'Composer, artist or arranger' }), artistHint),
+    h('div', { class: 'more' },
+      h('div', {}, h('h2', {}, 'Start & end time'), h('div', { class: 'hint', style: 'margin:0' }, 'Only if the TAB is in one part of the video. Leave empty for all of it.'),
+        h('div', { class: 'times' }, input('start', { placeholder: '0:00', 'aria-label': 'Start time' }), 'to',
+          input('end', { placeholder: 'end', 'aria-label': 'End time' })),
+        errors.start = h('div', { class: 'error hidden' }), errors.end = h('div', { class: 'error hidden' })),
+      h('div', { role: 'radiogroup', 'aria-labelledby': 'repeats' }, h('h2', { id: 'repeats' }, 'Repeats'), layout('as played'), layout('as written'))),
+    h('div', { class: 'foot' }, go, h('span', { class: 'muted small' }, file ? 'The file is copied after this step.' : 'The video downloads after this step.')));
+  app.append(stepsBar(1, backLink('#/', 'Cancel')), h('div', { class: 'wrap details' }, picture, form));
+  let again = false;
+
+  if (file) {
+    fields.title.value = file.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ');
+    fields.title.focus(); fields.title.select();
+  } else {
+    fields.title.placeholder = 'Reading the title…';
+    const lede = $('.lede', form);
+    try {
+      const info = await api('/api/video-info?url=' + enc(url));
+      if (!document.body.contains(form)) return;
+      if (info.found) {
+        if (!fields.title.value) fields.title.value = info.title;
+        if (!fields.artist.value) fields.artist.value = info.artist;
+        artistHint.textContent = 'We used the channel’s name. Add the composer if you like.';
+        lede.textContent = 'We filled these in from the video. Change anything you like.';
+        picture.replaceChildren(info.thumbnail ? h('img', { src: info.thumbnail, alt: '', referrerpolicy: 'no-referrer' }) : h('div', { class: 'file' }, ''),
+          h('figcaption', {}, h('b', {}, 'On YouTube: '), `“${info.video_title}”`, info.artist ? ` · ${info.artist}` : '',
+            info.duration ? ` · ${clock(Math.round(info.duration))}` : ''));
+      } else if (info.bot_check) {
+        lede.replaceChildren('YouTube asked to confirm you\u2019re not a bot, so we could not read the details, and the download would fail too. ',
+          `Turn on \u201c${SIGN_IN}\u201d in `, h('a', { href: '#/settings' }, 'Settings'), ', then come back.');
+      } else {
+        lede.textContent = 'We could not read the video’s details (are you online?). Type the title in.';
+        picture.replaceChildren(h('div', { class: 'file' }, h('div', { class: 'muted' }, url)));
+      }
+      if (info.existing) showExisting(info.existing);
+    } catch (err) {
+      if (err.field === 'url') { pending = null; location.hash = '#/'; toast(err.message); return; }
+      lede.textContent = 'We could not read the video’s details. Type the title in.';
+    }
+    fields.title.placeholder = 'Song title';
+    fields.title.focus();
+  }
+
+  function showExisting(old) {
+    again = false;
+    notice.replaceChildren(h('div', { class: 'notice', style: 'margin-bottom:22px' },
+      h('div', {}, 'You already made a sheet from this video: ', h('strong', {}, old.title), ` (${day(old.created)}).`),
+      h('div', { class: 'row', style: 'margin-top:10px' },
+        h('a', { class: 'button', href: openLink(old) }, 'Open it'),
+        h('button', { type: 'button', onclick: () => { again = true; notice.replaceChildren(); fields.title.focus(); } }, 'Make a new one'))));
+  }
+  const showError = (name, text) => {
+    const el = errors[name] || errors.title; el.textContent = text; el.classList.remove('hidden');
+    (fields[name] || fields.title).classList.add('bad'); (fields[name] || fields.title).focus();
+  };
+  const submit = async () => {
+    Object.values(errors).forEach(e => e.classList.add('hidden'));
+    Object.values(fields).forEach(f => f.classList.remove('bad'));
+    if (!fields.title.value.trim()) return showError('title', 'Give the sheet a title.');
+    const body = Object.fromEntries(Object.entries(fields).map(([k, el]) => [k, el.value.trim()]));
+    body.layout = $('input[name=layout]:checked', form).value;
+    if (again) body.again = true;
+    if (file) body.file = file.name; else body.url = url;
+    go.disabled = true;
+    try {
+      const response = await fetch('/api/sheets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await response.json();
+      if (response.status === 409 && data.existing) showExisting(data.existing);
+      else if (!response.ok) {
+        if (data.field && data.field !== 'url') showError(data.field, data.error);
+        else notice.replaceChildren(h('div', { class: 'notice bad', style: 'margin-bottom:22px' }, data.error));
+      } else if (data.upload) await upload(data.name);
+      else { pending = null; location.hash = '#/make/' + enc(data.name); }
+    } catch (err) {
+      notice.replaceChildren(h('div', { class: 'notice bad', style: 'margin-bottom:22px' }, 'The app did not answer. Is it still running in the terminal?'));
+    } finally { go.disabled = false; go.replaceChildren('Next: choose the music area', icon('next')); }
+  };
+  const upload = name => new Promise(resolve => {
+    // The file goes to the sheet folder; the server then starts "get video" on it.
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', `/api/sheets/${enc(name)}/video`);
+    xhr.upload.onprogress = e => { if (e.lengthComputable) go.textContent = `Copying the file… ${Math.round(e.loaded / e.total * 100)}%`; };
+    xhr.onload = () => {
+      if (xhr.status === 200) { pending = null; location.hash = '#/make/' + enc(name); }
+      else notice.replaceChildren(h('div', { class: 'notice bad', style: 'margin-bottom:22px' },
+        (JSON.parse(xhr.responseText || '{}').error || 'The file could not be copied.'), ' The unfinished sheet is in your list; you can delete it there.'));
+      resolve();
+    };
+    xhr.onerror = () => { notice.replaceChildren(h('div', { class: 'notice bad', style: 'margin-bottom:22px' }, 'The file could not be copied.')); resolve(); };
+    xhr.send(file);
+  });
+  form.addEventListener('submit', e => { e.preventDefault(); submit(); });
+};
+
+// ---- sheet screen -------------------------------------------------------------------------
+// The PDF's pages drawn as images (paper, dimmed a little in dark mode like the covers), one at a time
+// with a page switch; a warning that names measures can show them ringed on their page.
+
+screens.sheet = async function sheetScreen(name) {
+  const sheet = await api('/api/sheets/' + enc(name));
+  if (sheet.source === 'pdf') { location.replace('#/play/' + enc(name)); return; }
+  document.title = sheet.title + ' · Vid2Tab';
+  store.set('last', name);
+  const layout = sheet.page_layout || { pages: [] };
+  const pages = layout.pages.length || sheet.pages || 0;
+  const where = {};                 // measure number -> { page, line box, x0, x1 }
+  layout.pages.forEach((page, p) => page.lines.forEach(line => line.measures.forEach(m => {
+    where[m.n] = { page: p, box: line.box, x0: m.x0, x1: m.x1 };
+  })));
+
+  const pdf = `/files/${enc(name)}/sheet.pdf?v=${sheet.updated}`;
+  const head = h('div', { class: 'wrap sheet-head' }, backLink('#/', 'Your sheets'),
+    h('h1', { class: 'serif', id: 'sheet-title' }, sheet.title), sheet.artist && h('span', { class: 'who' }, sheet.artist),
+    h('button', { type: 'button', class: 'quiet icon', title: 'Change title and artist', 'aria-label': 'Change title and artist', onclick: () => editInfo() }, icon('edit')),
+    h('span', { class: 'spacer' }),
+    sheet.pdf && h('button', { type: 'button', onclick: () => printPdf(pdf) }, icon('print'), 'Print'),
+    sheet.pdf && h('a', { class: 'button', href: `/files/${enc(name)}/sheet.pdf?download=1` }, icon('download'), 'Download PDF'),
+    sheet.pdf && h('a', { class: 'button primary', href: '#/play/' + enc(name) }, icon('play'), 'Play'));
+
+  const tabs = h('div', { class: 'page-tabs', role: 'tablist', 'aria-label': 'Pages' });
+  const paper = h('div', { class: 'spage' });
+  const rings = h('div', { class: 'rings' });
+  const stage = h('div', { class: 'stage' }, tabs, h('div', { class: 'spage-wrap' }, paper));
+  let current = 0, ringed = [];
+  const showPage = (p, focusTab = false) => {
+    current = Math.max(0, Math.min(pages - 1, p));
+    [...tabs.children].forEach((t, i) => { t.setAttribute('aria-selected', String(i === current)); t.tabIndex = i === current ? 0 : -1; });
+    if (focusTab) tabs.children[current]?.focus();
+    const info = layout.pages[current] || { width: 612, height: 792 };
+    paper.style.aspectRatio = `${info.width} / ${info.height}`;
+    const img = h('img', { alt: `${sheet.title}, page ${current + 1} of ${pages}`,
+      src: `/files/${enc(name)}/page/${current + 1}.png?w=1400&v=${sheet.updated}`,
+      srcset: [800, 1400, 2000].map(w => `/files/${enc(name)}/page/${current + 1}.png?w=${w}&v=${sheet.updated} ${w}w`).join(', '),
+      sizes: 'min(760px, 100vw)' });
+    paper.replaceChildren(img, rings);
+    drawRings();
+  };
+  const drawRings = () => {
+    const info = layout.pages[current];
+    rings.replaceChildren();
+    if (!info) return;
+    // one ring per line: from the first to the last named measure on it
+    const byLine = new Map();
+    for (const n of ringed) {
+      const at = where[n];
+      if (!at || at.page !== current) continue;
+      const key = at.box.join(), r = byLine.get(key);
+      byLine.set(key, r ? { box: at.box, x0: Math.min(r.x0, at.x0), x1: Math.max(r.x1, at.x1) } : { ...at });
+    }
+    for (const r of byLine.values()) {
+      const [L, T, R, B] = r.box, w = R - L;
+      const el = h('span', { class: 'ring' });
+      Object.assign(el.style, { left: `${(L + w * r.x0) / info.width * 100}%`, width: `${w * (r.x1 - r.x0) / info.width * 100}%`,
+        top: `${T / info.height * 100}%`, height: `${(B - T) / info.height * 100}%` });
+      rings.append(el);
+    }
+    rings.firstChild?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  };
+  for (let p = 0; p < pages; p++) tabs.append(h('button', { type: 'button', role: 'tab', onclick: () => { ringed = []; select(null); showPage(p); } }, `Page ${p + 1}`));
+  // ← / → turn pages as soon as the screen opens, wherever the focus is, except while typing
+  const keys = e => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || pages < 2) return;
+    const t = e.target;
+    if (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+    ringed = []; select(null);
+    showPage(current + (e.key === 'ArrowRight' ? 1 : -1), tabs.contains(t));
+    e.preventDefault();
+  };
+  document.addEventListener('keydown', keys);
+  leave = () => document.removeEventListener('keydown', keys);
+  if (pages < 2) tabs.classList.add('hidden');
+
+  // a warning that names measures: click shows them on their page
+  let selected = null;
+  const select = el => { selected?.classList.remove('on'); selected = el; el?.classList.add('on'); };
+  const pointTo = (w, el) => {
+    const found = (w.measures || []).filter(n => where[n]);
+    if (!found.length) return null;
+    const page = where[found[0]].page, last = where[found[found.length - 1]].page;
+    const label = (found.length === 1 ? `Measure ${found[0]}` : `Measures ${found[0]}–${found[found.length - 1]}`)
+      + (last > page ? ` · pages ${page + 1}–${last + 1}` : ` · page ${page + 1}`);
+    return h('button', { type: 'button', class: 'link show', onclick: () => {
+      if (selected === el) { select(null); ringed = []; drawRings(); return; }
+      select(el); ringed = found; showPage(page);
+    } }, label);
+  };
+
+  const side = h('aside', { class: 'side' });
+  const preview = sheet.pdf && pages ? stage : h('div', { class: 'panel empty' }, 'No PDF yet.');
+  app.append(h('div', { class: 'band' }, head), h('div', { class: 'wrap sheet-layout' }, preview, side));
+  if (sheet.pdf && pages) showPage(0);
+
+  const editInfo = () => {
+    const title = h('input', { type: 'text', value: sheet.title, 'aria-label': 'Title' });
+    const artist = h('input', { type: 'text', value: sheet.artist, placeholder: 'Artist (optional)', 'aria-label': 'Artist' });
+    const error = h('div', { class: 'error hidden' });
+    const save = h('button', { class: 'primary', type: 'submit' }, 'Save and make again');
+    const form = h('form', {}, h('h2', { class: 'serif' }, 'Title and artist'), title, artist, error,
+      h('div', { class: 'hint' }, 'The sheet is made again with the new heading (the video and the music area are kept).'),
+      h('div', { class: 'row' }, h('button', { type: 'button', onclick: () => form.replaceWith(warnings) }, 'Cancel'), h('span', { class: 'spacer' }), save));
+    form.addEventListener('submit', async e => {
+      e.preventDefault(); save.disabled = true;
+      try { await api(`/api/sheets/${enc(sheet.name)}/remake`, { title: title.value, artist: artist.value }); location.hash = '#/make/' + enc(sheet.name); }
+      catch (err) { error.textContent = err.message; error.classList.remove('hidden'); save.disabled = false; }
+    });
+    warnings.replaceWith(form); title.focus(); title.select();
+  };
+  const warnings = warningList(sheet, pointTo);
+  side.append(warnings, sheetActions(sheet));
+  const text = h('pre', { class: 'log' }, 'Loading…');
+  const report = h('details', {}, h('summary', {}, 'Full report'), text);
+  report.addEventListener('toggle', async () => {
+    if (report.open) {
+      const response = await fetch(`/files/${enc(name)}/report.md`);
+      text.textContent = response.ok ? await response.text() : 'No report yet.';
+    }
+  });
+  side.append(report);
+};
+
+function printPdf(src) {
+  // the browser's own PDF viewer prints it as it is (the page images on screen are only a preview)
+  const frame = h('iframe', { src, class: 'hidden', title: 'Print' });
+  frame.addEventListener('load', () => {
+    try { frame.contentWindow.focus(); frame.contentWindow.print(); }
+    catch (e) { window.open(src, '_blank'); }
+    setTimeout(() => frame.remove(), 60000);
+  });
+  document.body.append(frame);
+}
+
+function sheetActions(sheet) {
+  const box = h('section', { class: 'acts' });
+  const range = sheet.range ? `${clock(Math.round(sheet.range.start))} to ${sheet.range.end != null ? clock(Math.round(sheet.range.end)) : 'the end'}` : 'the whole video';
+  const written = sheet.layout === 'as written';
+  const error = h('div', { class: 'error hidden' });
+  const option = (value, label) => h('button', { type: 'button', role: 'radio', 'aria-checked': String((value === 'as written') === written),
+    onclick: () => (value === 'as written') !== written && switchLayout(value) }, label);
+  const show = () => box.replaceChildren(
+    h('h2', { class: 'serif' }, 'Repeats'),
+    h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Repeats' }, option('as played', 'As played'), option('as written', 'As written')),
+    h('div', { class: 'hint', style: 'margin-top:0' }, written ? 'A page the video shows again is printed once.' : 'Every page the video shows, in order.',
+      ' Changing it makes the sheet again.'),
+    error,
+    h('h2', { class: 'serif', style: 'margin-top:14px' }, 'Not quite right?'),
+    h('a', { class: 'link', href: '#/crop/' + enc(sheet.name) }, 'Move the music area or cover a logo'),
+    h('button', { type: 'button', class: 'link', onclick: editRange }, 'Use a different part of the video'),
+    h('div', { class: 'hint' }, 'Made from ' + range + '.'));
+  const switchLayout = async value => {
+    try { await api(`/api/sheets/${enc(sheet.name)}/remake`, { layout: value }); location.hash = '#/make/' + enc(sheet.name); }
+    catch (err) { error.textContent = err.message; error.classList.remove('hidden'); }
+  };
+  const editRange = () => {
+    const toText = s => s == null ? '' : clock(Math.round(s));
+    const start = h('input', { type: 'text', value: sheet.range ? toText(sheet.range.start) : '', placeholder: '0:00', 'aria-label': 'Start time' });
+    const end = h('input', { type: 'text', value: sheet.range ? toText(sheet.range.end) : '', placeholder: 'end', 'aria-label': 'End time' });
+    const rangeError = h('div', { class: 'error hidden' });
+    const go = h('button', { class: 'primary', type: 'submit' }, 'Make it again');
+    const form = h('form', {}, h('h2', { class: 'serif' }, 'Start & end time'),
+      h('div', { class: 'times' }, start, 'to', end),
+      h('div', { class: 'hint' }, 'Leave both empty for the whole video. That part of the video is fetched again; you then check the music area.'),
+      rangeError, h('div', { class: 'row' }, h('button', { type: 'button', onclick: show }, 'Cancel'), h('span', { class: 'spacer' }), go));
+    form.addEventListener('submit', async e => {
+      e.preventDefault(); go.disabled = true;
+      try { await api(`/api/sheets/${enc(sheet.name)}/remake`, { start: start.value.trim(), end: end.value.trim() }); location.hash = '#/make/' + enc(sheet.name); }
+      catch (err) { rangeError.textContent = err.message; rangeError.classList.remove('hidden'); go.disabled = false; }
+    });
+    box.replaceChildren(form); start.focus();
+  };
+  show();
+  return box;
+}
+
+function warningList(sheet, pointTo = () => null) {
+  const box = h('section', {});
+  const problems = sheet.warnings.filter(w => w.level === 'problem');
+  const checks = sheet.warnings.filter(w => w.level === 'check');
+  const notes = sheet.warnings.filter(w => w.level === 'note');
+  if (sheet.state === 'failed' || problems.length)
+    box.append(h('div', { class: 'warning problem' }, h('strong', {}, 'The sheet could not be made.'),
+      ...(problems.length ? problems : [{ text: 'No measures were found. The music area may be wrong.' }]).map(w =>
+        h('div', { style: 'margin-top:4px' }, w.text, w.detail && h('details', {}, h('summary', {}, 'details'), w.detail))),
+      h('a', { class: 'button', style: 'margin-top:10px', href: '#/crop/' + enc(sheet.name) }, 'Adjust the music area')));
+  if (checks.length || !problems.length) {
+    box.append(h('h2', { class: 'serif' }, checks.length ? plural(checks.length, 'thing') + ' to check' : 'Nothing to check'));
+    box.append(h('div', { class: 'muted', style: 'margin-bottom:8px' },
+      checks.length ? 'Everything else matched the video.' : notes.length ? 'Only small notes, below.' : 'Everything matched the video.'));
+  }
+  box.append(...grouped(checks, pointTo));
+  if (notes.length) box.append(h('details', { style: 'margin-top:8px' }, h('summary', {}, plural(notes.length, 'small note')), ...grouped(notes, pointTo)));
+  return box;
+}
+
+function grouped(list, pointTo) {
+  // Alike warnings (same rule) after the first two fold into "N more like this".
+  const seen = new Map(), out = [];
+  for (const w of list) {
+    const key = w.kind ?? w.text, group = seen.get(key);
+    if (!group) { const g = { items: [w] }; seen.set(key, g); out.push(g); } else group.items.push(w);
+  }
+  const item = w => warningItem(w, pointTo);
+  return out.flatMap(g => g.items.length <= 3 ? g.items.map(item)
+    : [...g.items.slice(0, 2).map(item), h('details', { style: 'margin:0 0 10px' },
+        h('summary', {}, `${g.items.length - 2} more like this`), ...g.items.slice(2).map(item))]);
+}
+
+function warningItem(w, pointTo = () => null) {
+  const el = h('div', { class: 'warning ' + w.level }, h('div', {}, w.text));
+  const show = pointTo(w, el);
+  if (show) el.append(show);
+  if (w.detail && w.detail !== w.text) el.append(h('details', {}, h('summary', {}, 'details'), w.detail));
+  return el;
+}
+
+// ---- play mode --------------------------------------------------------------------------------
+// A reading view for playing from: pages fitted to the screen height, one or two side by side, turned
+// by keys (Bluetooth page-turner pedals send Space, arrows or PageUp/PageDown), by clicking the left or
+// right edge, or from the toolbar, which fades while the mouse is still. Remembers the page per sheet.
+
+// ---- play along: the video ------------------------------------------------------------------------
+// Two players behind one face: { play, pause, playing, time, seek, rate, setRate, rates, duration, destroy }.
+// Times are seconds of the part of the video the sheet was made from (timing's clock); YouTube plays the
+// whole video, so its times are shifted by the range start. YouTube terms: nothing is laid over the player,
+// its own controls stay, it is never smaller than 200 x 200 px and never starts by itself (docs/play-mode.md).
+
+let youtubeApi = null;
+function loadYoutubeApi() {
+  if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
+  if (!youtubeApi) youtubeApi = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('offline')), 10000);
+    const before = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => { clearTimeout(timer); before?.(); resolve(window.YT); };
+    const script = h('script', { src: 'https://www.youtube.com/iframe_api', async: true });
+    script.onerror = () => { clearTimeout(timer); reject(new Error('offline')); };
+    document.head.append(script);
+  }).catch(error => { youtubeApi = null; throw error; });    // try again next time (the network may be back)
+  return youtubeApi;
+}
+
+// A smooth clock over a player whose time only updates now and then: between updates the time runs on at
+// the playback rate from the last reported value.
+function smoothClock(read, rate, playing) {
+  let last = null, at = 0;
+  return () => {
+    const now = performance.now(), value = read();
+    if (last === null || value !== last.value || !playing()) { last = { value }; at = now; return value; }
+    return value + (now - at) / 1000 * rate();
+  };
+}
+
+function youtubePlayer(box, videoId, range, on) {
+  const start = range.start || 0, end = range.end;
+  const holder = h('div');
+  box.replaceChildren(holder);
+  let player = null, ready = false, closed = false, want = null;   // want: what the user last asked for
+  const state = () => ready ? player.getPlayerState() : -1;
+  const face = {
+    kind: 'youtube',
+    play: () => { want = 'play'; if (ready) player.playVideo(); },
+    pause: () => { want = 'pause'; if (ready) player.pauseVideo(); },
+    // playing, or buffering on the way to playing (a pause asked for while buffering wins); before the player is
+    // ready, a play asked for (K, the button) is queued and counts as playing, so a second K cancels it
+    playing: () => !ready ? want === 'play' : state() === 1 ? want !== 'pause' : state() === 3 && want === 'play',
+    time: () => 0, seek: t => ready && player.seekTo(start + Math.max(0, Math.min(t, face.duration())), true),
+    rate: () => ready ? player.getPlaybackRate() : 1, setRate: r => ready && player.setPlaybackRate(r),
+    rates: () => ready ? player.getAvailablePlaybackRates() : [1],
+    duration: () => ready ? Math.max(0, (end || player.getDuration() || 0) - start) : 0,
+    iframe: () => ready && player.getIframe(),
+    destroy: () => { closed = true; try { player?.destroy(); } catch (e) {} },
+  };
+  const raw = () => ready ? player.getCurrentTime() - start : 0;
+  face.time = smoothClock(raw, face.rate, face.playing);
+  loadYoutubeApi().then(YT => {
+    if (closed) return;
+    player = new YT.Player(holder, {
+      host: 'https://www.youtube-nocookie.com', videoId,
+      playerVars: { controls: 1, disablekb: 1, rel: 0, playsinline: 1, origin: location.origin,
+                    start: Math.floor(start), ...(end ? { end: Math.ceil(end) } : {}) },
+      events: {
+        onReady: () => { ready = true; on.ready(face); if (want === 'play') player.playVideo(); },   // queued
+        onStateChange: e => {
+          if (e.data === 1 && want === 'pause') player.pauseVideo();        // a pause asked for while it was buffering
+          if (e.data === 1 && want === null) want = 'play';                  // started from YouTube's own controls
+          if (e.data === 2 || e.data === 0) want = want === 'play' && e.data === 2 ? 'pause' : want;   // paused there
+          on.change();
+        },
+        onPlaybackRateChange: () => on.change(),
+        // 2 bad id, 5 HTML5 error, 100 removed or private, 101 / 150 / 153 the owner does not allow embedding
+        onError: e => { if (!closed) on.fail(e.data === 101 || e.data === 150 || e.data === 153 ? 'embed' : 'error'); },
+      } });
+  }).catch(() => { if (!closed) on.fail('offline'); });
+  return face;
+}
+
+function filePlayer(box, url, on) {
+  const video = h('video', { src: url, preload: 'auto', playsinline: true, tabindex: -1 });
+  video.preservesPitch = true;
+  box.replaceChildren(video);
+  const face = {
+    kind: 'file',
+    play: () => video.play().catch(() => {}), pause: () => video.pause(),
+    playing: () => !video.paused && !video.ended,
+    time: () => video.currentTime, seek: t => { video.currentTime = Math.max(0, Math.min(t, face.duration() || t)); },
+    rate: () => video.playbackRate, setRate: r => { video.playbackRate = r; on.change(); },
+    rates: () => [0.25, 0.5, 0.6, 0.75, 0.9, 1, 1.25, 1.5, 2],          // any rate works; these are offered
+    duration: () => Number.isFinite(video.duration) ? video.duration : 0,
+    destroy: () => { video.pause(); video.removeAttribute('src'); video.load(); },
+  };
+  video.addEventListener('click', () => face.playing() ? face.pause() : face.play());     // our own element
+  for (const type of ['play', 'pause', 'ended', 'ratechange', 'durationchange']) video.addEventListener(type, () => on.change());
+  video.addEventListener('loadedmetadata', () => on.ready(face), { once: true });
+  video.addEventListener('error', () => on.fail('file'), { once: true });
+  return face;
+}
+
+const playSettings = {
+  get spread() { return store.get('play.spread') || 'auto'; },          // 'auto' | '1' | '2'
+  get byTwo() { return store.get('play.bytwo') === '1'; },              // two-page view turns two at a time
+  get half() { return store.get('play.half') === '1'; },                // half turns (off by default)
+};
+
+screens.play = async function playScreen(name) {
+  const sheet = await api('/api/sheets/' + enc(name));
+  if (!sheet.pdf) { location.hash = '#/sheet/' + enc(name); return; }
+  document.title = sheet.title + ' · Vid2Tab';
+  store.set('last', name);
+  const layout = (sheet.page_layout || {}).pages || [];
+  const count = layout.length || sheet.pages || 1;
+  const size = p => layout[p] || layout[0] || { width: 612, height: 792 };
+  const back = sheet.source === 'pdf' ? '#/' : '#/sheet/' + enc(name);
+  let first = Math.max(0, Math.min(count - 1, +store.get('page.' + name) || 0));
+  let halfway = false;     // a half turn is showing: the next page's top lines over the top of this page
+
+  document.body.classList.add('playing');
+  const stage = h('div', { class: 'play-stage' });
+  const left = h('button', { type: 'button', class: 'edge l', tabindex: -1, 'aria-label': 'Previous page' }, icon('prev'));
+  const right = h('button', { type: 'button', class: 'edge r', tabindex: -1, 'aria-label': 'Next page' }, icon('next'));
+  const counter = h('span', { class: 'count', 'aria-live': 'polite' });
+  const corner = h('div', { class: 'play-corner', 'aria-hidden': 'true' });
+  const toggle = (label, iconName, key, title) => {
+    const b = h('button', { type: 'button', class: 'quiet', title, 'aria-pressed': String(store.get(key) === '1') }, icon(iconName), label);
+    b.addEventListener('click', () => { store.set(key, store.get(key) === '1' ? null : '1'); b.setAttribute('aria-pressed', String(store.get(key) === '1')); draw(); });
+    return b;
+  };
+  const spreadSeg = h('span', { class: 'seg', role: 'radiogroup', 'aria-label': 'Pages shown' });
+  const drawSeg = () => spreadSeg.replaceChildren(...[['1', '1 page'], ['2', '2 pages']].map(([v, label]) =>
+    h('button', { type: 'button', role: 'radio', 'aria-checked': String(twoUp() === (v === '2')),
+      title: 'Auto: two pages when the window is wide enough. Click to choose; click again for auto.',
+      onclick: () => { store.set('play.spread', playSettings.spread === v ? null : v); draw(); } }, label)));
+  const byTwo = toggle('Turn two at a time', 'pages', 'play.bytwo', 'In the two-page view, turn two pages at a time instead of one');
+  const halfTurns = toggle('Half turns', 'half', 'play.half',
+    "First press: the next page's top lines replace the top of this page (already played); second press: the rest");
+  const full = h('button', { type: 'button', class: 'quiet', title: 'Full screen (F)', onclick: () => fullScreen() }, icon('full'), 'Full screen');
+  const canAlong = sheet.source !== 'pdf';
+  const alongButton = canAlong && h('button', { type: 'button', class: 'quiet', 'aria-pressed': 'false',
+    title: 'Play along: the video beside the sheet (K plays and pauses)', onclick: () => setAlong(!along) }, icon('video'), 'Play along');
+  const bar = h('div', { class: 'play-bar band' },
+    h('a', { class: 'button quiet', href: back }, icon('back'), sheet.source === 'pdf' ? 'Your sheets' : 'Sheet'),
+    h('span', { class: 'serif t' }, sheet.title), sheet.artist && h('span', { class: 'who' }, sheet.artist),
+    h('span', { class: 'spacer' }),
+    h('button', { type: 'button', class: 'quiet icon', 'aria-label': 'Previous page', onclick: () => turn(-1, true) }, icon('prev')), counter,
+    h('button', { type: 'button', class: 'quiet icon', 'aria-label': 'Next page', onclick: () => turn(1, true) }, icon('next')),
+    h('span', { class: 'vr' }), spreadSeg, byTwo, halfTurns, alongButton, h('span', { class: 'vr' }), themeSwitch(), full,
+    h('button', { type: 'button', class: 'quiet open-pdf', title: 'Open a PDF', 'aria-label': 'Open a PDF', onclick: pickPdf }, icon('file'), h('span', { class: 'lbl' }, 'Open a PDF')));
+  const sheetArea = h('div', { class: 'play-sheet' }, stage, left, right, corner);
+  const videoPanel = h('aside', { class: 'play-video hidden', 'aria-label': 'Video' });
+  const transport = h('div', { class: 'play-transport', role: 'group', 'aria-label': 'Video controls' });
+  const divider = h('div', { class: 'divider hidden', role: 'separator', 'aria-label': 'Resize the video', title: 'Drag to resize the video' });
+  const main = h('div', { class: 'play-main' }, sheetArea, divider, videoPanel);
+  const view = h('div', { class: 'play bar-on', tabindex: -1 }, bar, main);
+  app.append(view);
+  const PAD = 12, GAP = 16;
+  const fs = () => !!document.fullscreenElement;
+
+  // which pages: one, or two side by side when two fit at full height (or as chosen)
+  function twoUp() {
+    if (count < 2) return false;
+    if (playSettings.spread !== 'auto') return playSettings.spread === '2';
+    const { width, height } = size(0);
+    return sheetArea.clientWidth >= 2 * (sheetArea.clientHeight - 2 * PAD) * width / height + 40;
+  }
+  // with half turns on, the two-page view turns one page at a time (each press shows a new half of the music)
+  const byTwoOn = () => playSettings.byTwo && !playSettings.half;
+  const step = () => twoUp() && byTwoOn() ? 2 : 1;
+  const lastFirst = () => twoUp() ? (byTwoOn() ? count - 1 - ((count - 1) % 2) : count - 2) : count - 1;
+  // A half turn of page p: split p at its gap between lines nearest the middle (b), and show page p + 1 above
+  // it down to its last gap above b (a), so no line of either page is cut. Gaps come from the server
+  // (between the lines of a Vid2Tab sheet, between systems on other PDFs); none: a plain turn.
+  function split(p) {
+    if (p + 1 >= count) return null;
+    const own = ((layout[p] || {}).gaps || []).slice(0, -1).filter(g => g > 0.15 && g < 0.85);   // not below the music
+    const next = (layout[p + 1] || {}).gaps || [];
+    const options = own.map(b => ({ b, a: Math.max(-1, ...next.filter(g => g <= b)) })).filter(o => o.a > 0);
+    return options.sort((x, y) => Math.abs(x.b - 0.5) - Math.abs(y.b - 0.5))[0] || null;
+  }
+  const pageImage = p => {
+    const { width, height } = size(p);
+    const px = Math.ceil((innerHeight - 2 * PAD) * width / height * (devicePixelRatio || 1) / 200) * 200;
+    return `/files/${enc(name)}/page/${p + 1}.png?w=${Math.min(2400, Math.max(400, px))}&v=${sheet.updated}`;
+  };
+  function draw() {
+    first = Math.max(0, Math.min(first, lastFirst()));
+    if (!playSettings.half || twoUp() || !split(first)) halfway = false;
+    const shown = twoUp() ? [first, first + 1].filter(p => p < count) : [first];
+    const img = (p, style) => h('img', { src: pageImage(p), alt: `${sheet.title}, page ${p + 1} of ${count}`, decoding: 'async', style,
+                                          draggable: 'false' });      // a drag on the page chooses a loop
+    stage.replaceChildren(...shown.map(p => {
+      const { width, height } = size(p);
+      let paper;
+      if (halfway) {
+        const { a, b } = split(p);
+        paper = h('div', { class: 'play-page halfway' },
+          img(p + 1, `clip-path: inset(0 0 ${(100 - a * 100).toFixed(2)}% 0)`),
+          img(p, `clip-path: inset(${(b * 100).toFixed(2)}% 0 0 0)`),
+          h('div', { class: 'half-line', style: `top: ${(b * 100).toFixed(2)}%`, 'aria-hidden': 'true' }));
+      } else paper = h('div', { class: 'play-page' }, img(p));
+      paper.dataset.ratio = width / height;
+      paper.dataset.page = p;
+      if (halfway) { const { a, b } = split(p); paper.dataset.a = a; paper.dataset.b = b; }
+      return paper;
+    }));
+    fit();
+    paintFollow();
+    paintLoop();
+    const label = halfway ? `${first + 1}½ / ${count}` : shown.length > 1 ? `${shown[0] + 1}–${shown[1] + 1} / ${count}` : `${first + 1} / ${count}`;
+    counter.textContent = label; corner.textContent = label;
+    left.disabled = first === 0; right.disabled = first >= lastFirst();
+    byTwo.classList.toggle('hidden', !twoUp() || playSettings.half);
+    drawSeg();
+    store.set('page.' + name, first ? String(first) : null);
+    for (let p = shown[shown.length - 1] + 1; p <= shown[shown.length - 1] + 2 && p < count; p++) new Image().src = pageImage(p);
+  }
+  function turn(by, keepBar) {
+    if (!keepBar) hideBar();
+    holdFollow();                                   // a turn by hand: following waits (see follow below)
+    if (playSettings.half && !twoUp()) {            // one page: next shows half the turn, then completes it
+      if (by > 0 && !halfway && split(first)) { halfway = true; draw(); return; }
+      if (by > 0 && halfway) { halfway = false; first += 1; draw(); return; }
+      if (by < 0 && halfway) { halfway = false; draw(); return; }
+    }
+    const next = Math.max(0, Math.min(lastFirst(), first + by * step()));
+    if (next === first) { nudge(by); return; }
+    first = next; halfway = false; draw();
+  }
+  // every page shown gets the same height: the most that fits below the toolbar (when shown) and side by side
+  function fit() {
+    const pages = [...stage.children], n = pages.length;
+    if (!n) return;
+    const W = sheetArea.clientWidth - 2 * PAD - GAP * (n - 1), H = sheetArea.clientHeight - 2 * PAD;
+    const widths = pages.map(p => +p.dataset.ratio), sum = widths.reduce((a, b) => a + b, 0);
+    const height = Math.max(50, Math.min(H, W / sum));
+    pages.forEach((p, i) => { p.style.height = height + 'px'; p.style.width = height * widths[i] + 'px'; });
+    // the small page count in the corner only where it has room beside the pages
+    corner.classList.toggle('off', (W - height * sum) / 2 < 110);
+  }
+  const nudge = by => { stage.classList.remove('nudge-l', 'nudge-r'); void stage.offsetWidth; stage.classList.add(by > 0 ? 'nudge-r' : 'nudge-l'); };
+
+  // the toolbar: in a window it always sits in its own strip above the pages; in full screen it starts
+  // hidden, appears (pages shrink to fit below it) when the mouse moves, and goes on any key or page turn
+  // or after 2 s of stillness unless hovered or focused
+  let hideTimer = null;
+  const setBar = on => { if (view.classList.contains('bar-on') !== on) { view.classList.toggle('bar-on', on); fit(); } };
+  const showBar = () => {
+    setBar(true); clearTimeout(hideTimer);
+    if (fs()) hideTimer = setTimeout(() => { if (!bar.matches(':hover, :focus-within')) setBar(false); }, 2000);
+  };
+  const hideBar = () => {
+    clearTimeout(hideTimer);
+    if (!fs()) return;
+    if (bar.contains(document.activeElement)) document.activeElement.blur();
+    setBar(false);
+  };
+  bar.addEventListener('mouseleave', () => fs() && showBar());
+  bar.addEventListener('focusin', () => { setBar(true); clearTimeout(hideTimer); });
+  let lastMove = 0;
+  const moved = e => { if (Math.abs(e.movementX) + Math.abs(e.movementY) > 1 && performance.now() - lastMove > 100) { lastMove = performance.now(); showBar(); } };
+  view.addEventListener('mousemove', moved);
+
+  // clicks: the left or right fifth turns, the middle shows or hides the toolbar
+  left.addEventListener('click', () => turn(-1));
+  right.addEventListener('click', () => turn(1));
+  stage.addEventListener('click', () => { if (fs()) view.classList.contains('bar-on') ? hideBar() : showBar(); });
+
+  const fullScreen = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.().catch(() => {});
+  const NEXT = new Set(['ArrowRight', 'ArrowDown', 'PageDown', ' ']), PREV = new Set(['ArrowLeft', 'ArrowUp', 'PageUp']);
+  const keys = e => {
+    const t = e.target;
+    // the speed menu left focused (opened and dismissed): a pedal still turns pages and K still plays
+    const pedal = along && t === speedMore && (e.key === ' ' || NEXT.has(e.key) || PREV.has(e.key) || e.key === 'k' || e.key === 'K');
+    if (pedal) view.focus();
+    else if (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key !== 'Tab' && e.key !== 'Shift' && !bar.contains(t)) hideBar();   // in full screen a key press clears the view
+    if (along && t === scrub && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && player) {   // the scrub bar: 5 s
+      e.preventDefault(); player.seek(player.time() + (e.key === 'ArrowRight' ? 5 : -5)); released(); return;
+    }
+    let by = 0;
+    if (e.key === ' ' && e.shiftKey) by = -1;
+    else if (NEXT.has(e.key)) by = 1;
+    else if (PREV.has(e.key)) by = -1;
+    if (by) { e.preventDefault(); if (!e.repeat) turn(by, bar.contains(t)); return; }         // a held pedal turns once
+    if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); holdFollow(); first = e.key === 'Home' ? 0 : lastFirst(); halfway = false; draw(); }
+    else if (e.key === 'f' || e.key === 'F') fullScreen();
+    else if ((e.key === 'k' || e.key === 'K') && along) { e.preventDefault(); if (!e.repeat) togglePlay(); }
+    else if (e.key === 'Escape' && !document.fullscreenElement) location.hash = back;
+  };
+  document.addEventListener('keydown', keys, true);
+  const resized = () => { if (along) sizePanel(); draw(); };
+  addEventListener('resize', resized);
+  const refit = new ResizeObserver(() => fit());      // the toolbar's height can change (wrapping, fonts arriving)
+  refit.observe(sheetArea);
+  const fsChange = () => {
+    full.replaceChildren(icon('full'), fs() ? 'Leave full screen' : 'Full screen');
+    if (fs()) { if (full.contains(document.activeElement) || document.activeElement === full) full.blur(); hideBar(); } else showBar();
+  };
+  document.addEventListener('fullscreenchange', fsChange);
+
+  // keep the screen on while playing (where the browser allows it)
+  let lock = null;
+  const wake = async () => { try { if (document.visibilityState === 'visible') lock = await navigator.wakeLock?.request('screen'); } catch (e) {} };
+  document.addEventListener('visibilitychange', wake);
+  wake();
+
+  // ---- play along: the video beside the sheet, the transport strip below ----
+  let along = false, player = null, timing = null, ticking = 0, failedOver = false;
+  let playQueued = false;   // K or the button before the video is set up (the timing still loading): play once it is
+  const screenBox = h('div', { class: 'screen' });
+  const source = h('div', { class: 'src' });
+  const note = h('div', { class: 'note notice hidden' });
+  const followButton = h('button', { type: 'button', class: 'quiet follow', 'aria-pressed': 'true',
+    title: 'Follow the music: the line being played is tinted and pages turn by themselves', onclick: () => { toggleFollow(); refocus(); } },
+    'Follow');
+  const placeSeg = h('span', { class: 'seg', role: 'radiogroup', 'aria-label': 'Where the video goes' });
+  const placeRow = h('div', { class: 'place-row' }, h('span', { class: 'lbl' }, 'Video'), placeSeg);
+  videoPanel.append(screenBox, h('div', { class: 'side' }, source, transport, placeRow, note));
+  const playButton = h('button', { type: 'button', class: 'primary playpause', 'aria-label': 'Play (K)', title: 'Play (K)',
+    onclick: () => { togglePlay(); refocus(); } }, icon('play'));
+  const timeText = h('span', { class: 'time', 'aria-live': 'off' }, '0:00 / 0:00');
+  const scrub = h('div', { class: 'scrub', role: 'slider', tabindex: 0, 'aria-label': 'Position in the video', 'aria-valuemin': 0 },
+    h('div', { class: 'track' }), h('div', { class: 'loopband hidden' }), h('div', { class: 'ticks' }), h('div', { class: 'done' }), h('div', { class: 'knob' }));
+  const speedSeg = h('span', { class: 'seg', role: 'radiogroup', 'aria-label': 'Speed' });
+  const speedMore = h('select', { 'aria-label': 'Other speeds', title: 'Other speeds' });
+  const loopRow = h('div', { class: 'loop-hint' });
+  transport.append(playButton, timeText, followButton, scrub, h('span', { class: 'speed' }, h('span', { class: 'lbl' }, 'Speed'), speedSeg, speedMore), loopRow);
+
+  // keys stay with the page: after any click in the video or the transport, focus goes back to the view
+  // (no cover over the YouTube player: its terms forbid one), so Space, arrows, the pedal and K keep working
+  const refocus = () => setTimeout(() => {
+    const active = document.activeElement;
+    if (!along || (active && active !== document.body && !videoPanel.contains(active) && !transport.contains(active))) return;
+    if (active && active.blur) active.blur();
+    view.focus({ preventScroll: true });
+  }, 0);
+  const windowBlur = () => setTimeout(() => {
+    if (along && document.activeElement && document.activeElement.tagName === 'IFRAME' && videoPanel.contains(document.activeElement)) refocus();
+  }, 0);
+  addEventListener('blur', windowBlur);
+  // (not the speed menu: blurring it on the click that opens it closes it at once; a choice gives focus back)
+  videoPanel.addEventListener('pointerup', e => { if (!e.target.closest('select')) refocus(); });
+  speedMore.addEventListener('change', () => { player?.setRate(+speedMore.value); refocus(); });
+
+  const fmt = t => clock(Math.max(0, Math.floor(t)));
+  // ---- where the video goes: Auto (beside or above), Beside, or hidden (the kept copy only: YouTube's player may
+  // not play unseen, so there the smallest allowed player instead). Auto: beside in a window at least 1.25 times
+  // as wide as tall, else above. The divider sizes it: the panel's width beside, the picture's height above (never
+  // under 200 px, YouTube's minimum; the pages keep at least 320 px). Choice and sizes are remembered.
+  // no manual "Above": in a wide window it shrinks the pages too much (Auto still puts the video above in tall ones)
+  const placePref = () => ({ beside: 'beside', hidden: 'hidden' })[store.get('play.place')] || 'auto';
+  const isFile = () => !!player && player.kind === 'file' || (!!timing && !timing.video_id && !!timing.local_video);
+  const smallest = () => placePref() === 'hidden' && !isFile();
+  let place = 'beside';
+  const clampW = w => Math.round(Math.max(356, Math.min(w, innerWidth - 320 - 12)));
+  const clampH = v => Math.round(Math.max(200, Math.min(v, innerHeight - 320)));
+  function sizePanel() {
+    const pref = placePref(), shape = innerWidth >= 1.25 * innerHeight ? 'beside' : 'above';
+    place = pref === 'hidden' ? (isFile() ? 'hidden' : shape) : pref === 'auto' ? shape : pref;
+    main.classList.toggle('above', along && place === 'above');
+    main.classList.toggle('video-hidden', along && place === 'hidden');
+    divider.classList.toggle('hidden', !along || place === 'hidden' || smallest());
+    divider.setAttribute('aria-orientation', place === 'above' ? 'horizontal' : 'vertical');
+    if (place === 'beside') view.style.setProperty('--video-w', (smallest() ? 356 : clampW(+store.get('play.size.beside') || innerWidth * 0.32)) + 'px');
+    if (place === 'above') view.style.setProperty('--video-h', (smallest() ? 200 : clampH(+store.get('play.size.above') || innerHeight * 0.3)) + 'px');
+    if (place === 'hidden') view.style.setProperty('--video-w', '356px');
+    drawPlace();
+  }
+  function drawPlace() {
+    const pref = placePref(), file = isFile();
+    const options = [['auto', 'Auto', 'Beside or above the pages, from the window\'s shape'], ['beside', 'Beside', ''],
+      ['hidden', file ? 'Hidden' : 'Smallest', file ? 'No picture: the sound and the controls only' : 'The smallest player YouTube allows (it may not be hidden)']];
+    placeSeg.replaceChildren(...options.map(([value, text, title]) => h('button', { type: 'button', role: 'radio', title: title || null,
+      'aria-checked': String(pref === value), onclick: () => { store.set('play.place', value === 'auto' ? null : value); sizePanel(); refocus(); } }, text)));
+  }
+  // dragging the divider
+  divider.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    divider.setPointerCapture(e.pointerId); divider.classList.add('dragging'); document.body.classList.add('dragging-divider');
+    document.body.style.cursor = place === 'above' ? 'row-resize' : 'col-resize';
+    // the size moves with the pointer from where it took hold (down: a taller picture; left: a wider panel)
+    const from = place === 'above' ? { pos: e.clientY, size: screenBox.getBoundingClientRect().height }
+                                   : { pos: e.clientX, size: videoPanel.getBoundingClientRect().width };
+    const move = ev => {
+      if (place === 'above') {
+        const v = clampH(from.size + ev.clientY - from.pos);
+        store.set('play.size.above', String(v)); view.style.setProperty('--video-h', v + 'px');
+      } else {
+        const v = clampW(from.size - (ev.clientX - from.pos));
+        store.set('play.size.beside', String(v)); view.style.setProperty('--video-w', v + 'px');
+      }
+    };
+    const up = () => {
+      divider.removeEventListener('pointermove', move); divider.classList.remove('dragging');
+      document.body.classList.remove('dragging-divider'); document.body.style.cursor = '';
+      view.focus({ preventScroll: true });          // keys (pedals) to the page
+    };
+    divider.addEventListener('pointermove', move);
+    divider.addEventListener('pointerup', up, { once: true });
+    divider.addEventListener('pointercancel', up, { once: true });
+  });
+  function drawSpeeds() {
+    const rates = player ? player.rates() : [1], now = player ? player.rate() : 1;
+    const main3 = [0.5, 0.75, 1].filter(r => rates.includes(r));
+    speedSeg.replaceChildren(...main3.map(r => h('button', { type: 'button', role: 'radio', 'aria-checked': String(now === r),
+      onclick: () => { player?.setRate(r); refocus(); } }, r + '×')));
+    const others = rates.filter(r => !main3.includes(r)), list = others.join(' ');
+    if (speedMore.dataset.list !== list) {          // rebuilt only when the rates change: never while it is open
+      speedMore.dataset.list = list;
+      speedMore.replaceChildren(h('option', { value: '', disabled: true }, 'Other'),
+        ...others.map(r => h('option', { value: r }, r + '×')));
+    }
+    speedMore.value = others.includes(now) ? String(now) : '';
+    speedMore.classList.toggle('hidden', !others.length);
+  }
+  function drawTicks() {
+    const ticks = $('.ticks', scrub), d = player ? player.duration() : 0;
+    ticks.replaceChildren();
+    if (!d || !timing || !timing.lines) return;
+    for (const line of timing.lines) {
+      const t = (line.spans[0] || [])[0];
+      if (t != null && t > 0.5 && t < d) ticks.append(h('div', { class: 'tick', style: `left: ${(t / d * 100).toFixed(3)}%` }));
+    }
+  }
+  function drawTime() {
+    const d = player ? player.duration() : 0, t = player ? Math.max(0, Math.min(player.time(), d || Infinity)) : 0;
+    timeText.textContent = `${fmt(t)} / ${fmt(d)}`;
+    const share = d ? (t / d * 100).toFixed(3) + '%' : '0%';
+    $('.done', scrub).style.width = share; $('.knob', scrub).style.left = share;
+    scrub.setAttribute('aria-valuemax', Math.round(d)); scrub.setAttribute('aria-valuenow', Math.round(t));
+    scrub.setAttribute('aria-valuetext', `${fmt(t)} of ${fmt(d)}`);
+  }
+  function drawPlaying() {
+    const on = player ? player.playing() : along && playQueued;
+    playButton.replaceChildren(icon(on ? 'pause' : 'play'));
+    playButton.setAttribute('aria-label', on ? 'Pause (K)' : 'Play (K)'); playButton.title = on ? 'Pause (K)' : 'Play (K)';
+  }
+  const tick = () => { drawTime(); follow(); ticking = requestAnimationFrame(tick); };
+  function togglePlay() {
+    if (!player) { if (along) { playQueued = !playQueued; drawPlaying(); } return; }
+    if (pauseTimer) { clearTimeout(pauseTimer); pauseTimer = 0; }     // K in a pause between loop repeats
+    player.playing() ? player.pause() : player.play();
+    drawPlaying();                     // also when the player is not ready yet (the play is queued)
+  }
+
+  // the scrub bar: click or drag to move, arrow keys 5 s
+  const seekAt = e => { const r = scrub.getBoundingClientRect(), d = player ? player.duration() : 0;
+    if (d) { player.seek(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * d); released(); drawTime(); } };
+  scrub.addEventListener('pointerdown', e => { if (!player) return; scrub.setPointerCapture(e.pointerId); seekAt(e);
+    const move = ev => seekAt(ev), up = () => { scrub.removeEventListener('pointermove', move); refocus(); };
+    scrub.addEventListener('pointermove', move); scrub.addEventListener('pointerup', up, { once: true }); });
+
+  const showNote = text => { note.textContent = text || ''; note.classList.toggle('hidden', !text); };
+  function showSource() {
+    const youtube = player && player.kind === 'youtube';
+    source.replaceChildren(...(youtube ? [h('span', {}, 'Video: YouTube'),
+      h('a', { href: 'https://www.youtube.com/t/terms', target: '_blank', rel: 'noopener' }, 'YouTube Terms')]
+      : player ? [h('span', {}, 'Video: the copy kept with this sheet')] : []));
+  }
+  let resumeAt = 0;          // where YouTube was when it failed: the kept copy goes on from there
+  function useFile(why) {
+    resumeAt = player ? Math.max(0, player.time()) : 0;
+    resumePlaying = !!player && player.playing();     // playing, or a play queued before YouTube failed
+    player?.destroy();
+    if (!timing.local_video) {
+      player = null;
+      screenBox.replaceChildren(h('div', { class: 'wait' }, 'The video cannot play here.'));
+      showNote((why === 'offline' ? 'YouTube cannot be reached and ' : why === 'embed' ? 'YouTube does not allow this video to play here, and ' : '')
+        + 'no copy of the video is kept with this sheet.');
+      showSource(); drawSpeeds(); drawTime(); drawPlaying();
+      return;
+    }
+    failedOver = !!why;
+    player = filePlayer(screenBox, `/files/${enc(name)}/video?sound=${timing.local_sound === 'done' ? 1 : 0}`, events);
+    fileNote = why === 'embed' ? 'YouTube does not allow this video to be played in other pages, so the copy kept with this sheet is playing.'
+      : why === 'offline' ? 'YouTube cannot be reached, so the copy kept with this sheet is playing.'
+      : why ? 'The YouTube player had a problem, so the copy kept with this sheet is playing.' : timing.how ? '' :
+        'This sheet cannot follow the video yet: the video plays without following.';
+    showNote(fileNote);
+    showSource();
+    if (timing.local_sound && timing.local_sound !== 'done') getSound();
+  }
+  // Older sheets kept their video without its sound (the download took the picture only). The first time the
+  // kept copy is needed, the server adds the sound once (intake.make_play_copy: a few seconds); meanwhile the
+  // silent copy plays, then the copy with sound takes over at the same moment, playing if it was.
+  let fileNote = '', resumePlaying = false, soundAsked = false;
+  async function getSound() {
+    if (soundAsked) return;
+    soundAsked = true;
+    let state;
+    try { state = await api('/api/sheets/' + enc(name) + '/sound', {}); }
+    catch (e) { state = { state: 'failed', note: 'The sound could not be fetched.' }; }
+    const started = Date.now();
+    while (along && state.state === 'running') {
+      const secs = Math.round((Date.now() - started) / 1000);
+      showNote([fileNote, `Adding the sound to the kept copy (once for this sheet): ${state.note.replace(/ \.\.\.$/, '')}… ${secs} s`].filter(Boolean).join(' '));
+      await new Promise(r => setTimeout(r, 1000));
+      try { state = await api('/api/sheets/' + enc(name) + '/sound'); } catch (e) { break; }
+    }
+    if (!along || !player || player.kind !== 'file') return;
+    if (state.state === 'done') {
+      timing.local_sound = 'done';
+      resumeAt = player.time(); resumePlaying = player.playing();
+      player.destroy();
+      player = filePlayer(screenBox, `/files/${enc(name)}/video?sound=1`, events);
+      showNote(fileNote);
+    } else if (state.state === 'failed' && state.detail) {
+      // a plain message, a way to try again, and what went wrong for whoever wants it
+      note.classList.remove('hidden');
+      note.replaceChildren(...(fileNote ? [h('p', {}, fileNote)] : []), h('p', {}, state.note),
+        h('div', { class: 'note-actions' },
+          h('button', { type: 'button', class: 'quiet', onclick: () => { soundAsked = false; showNote(fileNote); getSound(); refocus(); } }, 'Try again'),
+          state.bot_check ? settingsLink() : ''),
+        h('details', {}, h('summary', {}, 'details'), h('pre', {}, state.detail)));
+    } else showNote([fileNote, 'This copy has no sound: ' + (state.note || 'it could not be added.')].filter(Boolean).join(' '));
+  }
+  const events = {
+    ready: face => {
+      if (face !== player) return;
+      if (face.kind === 'file' && resumeAt > 0.5) { face.seek(resumeAt); resumeAt = 0; }
+      if (face.kind === 'file' && resumePlaying) { resumePlaying = false; face.play(); }
+      drawSpeeds(); drawTicks(); drawTime(); drawPlaying(); showSource(); drawLoop(); sizePanel();
+    },
+    change: () => { drawPlaying(); drawSpeeds(); },
+    fail: why => { if (player && player.kind === 'youtube') useFile(why); else showNote('The video file could not be played.'); },
+  };
+  // ---- follow: which measure is being played, where it is on the pages, and turning to it ----
+  // `spans`: every (start, end, measure) of the timing, by start; `places`: measure -> its page, line box (PDF
+  // points), x0 / x1 in the line (fractions) and whether its line is the page's last. Line tint always; ring and
+  // playhead only where the times come from a cursor in the video (`how` 'cursor').
+  let spans = [], places = new Map(), canFollow = false, lit = null, held = false;
+  let following = store.get('play.follow') !== 'off';
+  function prepareFollow() {
+    places = new Map();
+    layout.forEach((pg, page) => (pg.lines || []).forEach((line, index) => (line.measures || []).forEach(m =>
+      places.set(m.n, { page, box: line.box, x0: m.x0, x1: m.x1, line: index, lines: pg.lines.length, count: line.measures.length,
+                        k: line.measures.indexOf(m), lx0: line.measures[0].x0, lx1: line.measures[line.measures.length - 1].x1,
+                        printed: m.printed }))));
+    spans = (timing.measures || []).flatMap(m => (m.spans || []).map(([a, b]) => ({ a, b, n: m.n }))).filter(x => places.has(x.n))
+      .sort((x, y) => x.a - y.a);
+    canFollow = !!timing.how && !!(sheet.page_layout || {}).measures && spans.length > 0;
+    followButton.classList.toggle('hidden', !canFollow);
+    view.classList.toggle('along-on', canFollow);             // measures can be clicked and dragged
+    drawFollowButton();
+    if (timing.how && !canFollow) showNote('The pages of this sheet could not be matched to its measures, so the video plays without following.');
+  }
+  // the span being played at t: the last one started; in a short gap after it (a page change) it stays lit
+  function playedAt(t) {
+    let lo = 0, hi = spans.length - 1, at = -1;
+    while (lo <= hi) { const mid = (lo + hi) >> 1; if (spans[mid].a <= t) { at = mid; lo = mid + 1; } else hi = mid - 1; }
+    if (at < 0) return null;
+    // a measure played twice (as written: a replay) overlaps nothing; take the latest start not yet ended
+    let best = spans[at];
+    for (let i = at; i >= 0 && i >= at - 8; i--) if (spans[i].a <= t && t < spans[i].b) { best = spans[i]; break; }
+    if (t >= best.b + 2) return null;                                  // the music has ended
+    return { n: best.n, frac: Math.max(0, Math.min(1, (t - best.a) / Math.max(0.01, best.b - best.a))) };
+  }
+  const pct = v => (v * 100).toFixed(3) + '%';
+  function paintFollow() {
+    for (const el of stage.querySelectorAll('.follow-line, .follow-ring, .follow-head')) el.remove();
+    if (!along || !canFollow || !following || !lit) return;
+    const place = places.get(lit.n);
+    for (const paper of stage.children) {
+      const p = +paper.dataset.page, pg = layout[place.page] || {};
+      // a half turn shows page p below b and page p + 1 above a
+      const a = paper.dataset.a != null ? +paper.dataset.a : null, b = paper.dataset.b != null ? +paper.dataset.b : null;
+      const [x0, y0, x1, y1] = place.box, W = pg.width, H = pg.height;
+      if (a == null ? place.page !== p : !((place.page === p && y0 / H >= b - 0.002) || (place.page === p + 1 && y1 / H <= a + 0.002))) continue;
+      // the line from its first measure's start (the staff, after any clef and time signature) to its last barline
+      const lx0 = x0 + (x1 - x0) * place.lx0, lx1 = x0 + (x1 - x0) * place.lx1;
+      const box = { left: pct(lx0 / W), top: pct(y0 / H), width: pct((lx1 - lx0) / W), height: pct((y1 - y0) / H) };
+      paper.append(h('div', { class: 'follow-line', style: `left:${box.left};top:${box.top};width:${box.width};height:${box.height}` }));
+      if (timing.how === 'cursor') {
+        const mx0 = x0 + (x1 - x0) * place.x0, mx1 = x0 + (x1 - x0) * place.x1;
+        paper.append(h('div', { class: 'follow-ring', style: `left:${pct(mx0 / W)};top:${box.top};width:${pct((mx1 - mx0) / W)};height:${box.height}` }));
+        paper.append(h('div', { class: 'follow-head', style: `top:${box.top};height:${box.height}` }));
+      }
+    }
+    moveHead();
+  }
+  function moveHead() {
+    if (!lit || timing.how !== 'cursor') return;
+    const place = places.get(lit.n), [x0, , x1] = place.box, W = (layout[place.page] || {}).width;
+    const x = x0 + (x1 - x0) * (place.x0 + (place.x1 - place.x0) * lit.frac);
+    for (const head of stage.querySelectorAll('.follow-head')) head.style.left = pct(x / W);
+  }
+  // which view the music wants. One page: the page of the music TURN_LEAD seconds ahead, so the page turns as the
+  // page's last measure ends (and a D.C. or repeat that goes back turns back, not on), never hiding measures still
+  // being played. Two pages (the music's page stays in view): the next page comes in once the music is halfway
+  // through the page's last line. Half turns: the next page's top shows once the music enters the bottom part, and
+  // the turn completes on the next page.
+  const TURN_LEAD = 0.3;
+  function wanted(place, ahead, frac) {
+    const progress = (place.k + frac) / place.count;
+    const onLast = place.line === place.lines - 1 && progress >= 0.5 && place.page + 1 < count;
+    if (twoUp()) {
+      const target = onLast ? place.page + 1 : place.page;
+      if (target === first || target === first + 1) return { first, halfway: false };
+      return { first: byTwoOn() ? target - (target % 2) : Math.max(0, target - 1), halfway: false };
+    }
+    if (playSettings.half) {
+      const sp = split(place.page), H = (layout[place.page] || {}).height || 1;
+      return { first: place.page, halfway: !!sp && place.box[1] / H >= sp.b - 0.002 };
+    }
+    return { first: ahead ? places.get(ahead.n).page : place.page, halfway: false };
+  }
+  let lastT = 0;
+  function follow() {
+    if (!canFollow || !player) return;
+    let t = player.time();
+    // a loop: reaching its end (having played into it) goes back exactly to its first measure (no lead-in:
+    // the repeats are seamless), after the chosen pause if any
+    if (loop && player.playing() && t >= loop.t1 && lastT < loop.t1 + 0.5 && lastT >= loop.t0 - LEAD_IN - 0.5) {
+      goRound(); t = player.time();
+    }
+    if (Math.abs(t - lastT) > 3) released();          // a jump (YouTube's own seek bar too): back to the music
+    lastT = t;
+    if (aim && (t >= aim.t || t < aim.t - LEAD_IN - 1)) aim = null;
+    const now = playedAt(t);
+    const changed = (now && now.n) !== (lit && lit.n);
+    lit = now;
+    if (changed) paintFollow(); else moveHead();
+    if (!lit || !following) return;
+    const place = places.get(lit.n);
+    // in a lead-in (a click on a measure, a loop going round) the view stays on the measure aimed at
+    const want = aim ? wanted(places.get(aim.n), { n: aim.n }, 0) : wanted(place, playedAt(t + TURN_LEAD), lit.frac), same = want.first === first && want.halfway === halfway;
+    if (held) {                // turned by hand: wait until the music reaches what is shown (or Follow is pressed)
+      if (same) { held = false; drawFollowButton(); }
+      return;
+    }
+    if (!same) { first = want.first; halfway = want.halfway; draw(); }
+  }
+  function released() { if (held) { held = false; drawFollowButton(); } }      // a seek: follow the music again
+  function holdFollow() { if (along && canFollow && following && lit && !held) { held = true; drawFollowButton(); } }
+  function toggleFollow() {
+    if (held || !following) { following = true; held = false; } else following = false;
+    store.set('play.follow', following ? null : 'off');
+    drawFollowButton(); paintFollow();
+  }
+  function drawFollowButton() {
+    const on = following && !held;
+    followButton.setAttribute('aria-pressed', String(on));
+    followButton.textContent = held ? 'Follow: back to the music' : 'Follow';
+    followButton.title = held ? 'You turned the page: following waits until the music reaches it. Click to go back to the music now.'
+      : on ? 'Following: the line being played is tinted and pages turn by themselves. Click to stop turning pages.'
+      : 'Not following: click to tint the line being played and turn pages by themselves.';
+  }
+
+  // ---- click a measure: the video goes there; drag across measures: loop them ----
+  // A click jumps to LEAD_IN s before the measure's start (the time of its pass closest to now: a repeat or a
+  // D.C. plays it more than once) and keeps playing or paused. A drag from one measure to another loops the
+  // whole measures between (from the first one's start to the last one's end: barline to barline); the loop is
+  // shaded on the pages and the scrub bar, goes round with the same lead-in, and is kept per sheet until its
+  // chip's x removes it. Works where the pages are matched to measures and the timing is known (Follow's data).
+  const LEAD_IN = 1;
+  let loop = null, aim = null;
+  function spansOf(n) { return spans.filter(x => x.n === n); }
+  function nearest(n, t) { return spansOf(n).sort((x, y) => Math.abs(x.a - t) - Math.abs(y.a - t))[0] || null; }
+  function jumpTo(t, n) {
+    if (!player) return;
+    player.seek(Math.max(0, t - LEAD_IN));
+    aim = { t, n };
+    lastT = player.time();
+    released(); drawTime(); follow();
+  }
+  // the measure under a point of a page on the stage, or null
+  function measureAt(paper, x, y) {
+    const r = paper.getBoundingClientRect(), fx = (x - r.left) / r.width, fy = (y - r.top) / r.height;
+    let page = +paper.dataset.page;
+    if (paper.dataset.a != null) {                    // a half turn: the next page's top above a, this page below b
+      if (fy <= +paper.dataset.a) page += 1; else if (fy < +paper.dataset.b) return null;
+    }
+    const pg = layout[page];
+    if (!pg || !pg.lines) return null;
+    const X = fx * pg.width, Y = fy * pg.height;
+    let best = null, gap = Infinity;
+    for (const line of pg.lines) {
+      const [x0, y0, x1, y1] = line.box, d = Y < y0 ? y0 - Y : Y > y1 ? Y - y1 : 0;
+      if (d < gap && X >= x0 - 20 && X <= x1 + 20) { gap = d; best = line; }
+    }
+    if (!best || gap > 30 || !best.measures.length) return null;
+    const [x0, , x1] = best.box, u = (X - x0) / (x1 - x0);
+    const m = best.measures.find(m => u < m.x1) || best.measures[best.measures.length - 1];
+    return places.has(m.n) && spansOf(m.n).length ? m.n : null;
+  }
+  // the loop's times for measures a..b (either order): the first one's pass nearest now, the last one's first
+  // pass ending after it starts
+  function loopOf(a, b) {
+    const lo = Math.min(a, b), hi = Math.max(a, b), now = player ? player.time() : 0;
+    const from = nearest(lo, now);
+    const to = from && spansOf(hi).find(x => x.b > from.a);
+    return from && to ? { a: lo, b: hi, t0: from.a, t1: to.b } : null;
+  }
+  let pauseTimer = 0;
+  const loopPause = () => +(store.get('play.looppause') || 0);          // seconds between repeats: 0, 1 or 2
+  function goRound() {
+    player.seek(loop.t0);
+    aim = { t: loop.t0, n: loop.a };
+    lastT = player.time();
+    const wait = loopPause();
+    if (wait) {
+      player.pause();
+      clearTimeout(pauseTimer);
+      pauseTimer = setTimeout(() => { pauseTimer = 0; if (loop && player && !player.playing()) player.play(); }, wait * 1000);
+    }
+  }
+  function setLoop(value) {
+    clearTimeout(pauseTimer); pauseTimer = 0;
+    loop = value;
+    store.set('loop.' + name, loop ? JSON.stringify(loop) : null);
+    paintLoop(); drawLoop();
+  }
+  function paintLoop(choosing) {
+    for (const el of stage.querySelectorAll('.loop-mark')) el.remove();
+    const show = choosing || loop;
+    if (!along || !canFollow || !show) return;
+    const lo = Math.min(show.a, show.b), hi = Math.max(show.a, show.b);
+    for (const paper of stage.children) {
+      const p = +paper.dataset.page, a = paper.dataset.a != null ? +paper.dataset.a : null, b = a != null ? +paper.dataset.b : null;
+      layout.forEach((pg, page) => (pg.lines || []).forEach(line => {
+        const inside = line.measures.filter(m => m.n >= lo && m.n <= hi);
+        if (!inside.length) return;
+        const [x0, y0, x1, y1] = line.box, W = pg.width, H = pg.height;
+        if (a == null ? page !== p : !((page === p && y0 / H >= b - 0.002) || (page === p + 1 && y1 / H <= a + 0.002))) return;
+        const mx0 = x0 + (x1 - x0) * inside[0].x0, mx1 = x0 + (x1 - x0) * inside[inside.length - 1].x1;
+        const cls = ['loop-mark', choosing ? 'choosing' : '', inside[0].n === lo ? 'from' : '', inside[inside.length - 1].n === hi ? 'to' : ''];
+        paper.append(h('div', { class: cls.filter(Boolean).join(' '),
+          style: `left:${pct(mx0 / W)};top:${pct(y0 / H)};width:${pct((mx1 - mx0) / W)};height:${pct((y1 - y0) / H)}` }));
+      }));
+    }
+  }
+  // the measures as printed on the sheet when both ends' numbers were read, else how many and when
+  function loopLabel(l) {
+    const pa = places.get(l.a).printed, pb = places.get(l.b).printed, many = l.b - l.a + 1;
+    if (pa && pb && pb - pa === l.b - l.a) return pa === pb ? `Loop: measure ${pa}` : `Loop: measures ${pa}–${pb}`;
+    return `Loop: ${many} measure${many > 1 ? 's' : ''}, ${fmt(l.t0)}–${fmt(l.t1)}`;
+  }
+  function drawLoop() {
+    const band = $('.loopband', scrub), d = player ? player.duration() : 0;
+    band.classList.toggle('hidden', !loop || !d);
+    if (loop && d) { band.style.left = pct(loop.t0 / d); band.style.width = pct((loop.t1 - loop.t0) / d); }
+    if (!canFollow) { loopRow.replaceChildren(); return; }
+    loopRow.className = loop ? 'loop-chip' : 'loop-hint';
+    loopRow.replaceChildren(...(loop ? [
+      h('button', { type: 'button', title: 'Go to the start of the loop', onclick: () => { jumpTo(loop.t0, loop.a); refocus(); } },
+        loopLabel(loop)),
+      h('button', { type: 'button', class: 'x', 'aria-label': 'Remove the loop', title: 'Remove the loop',
+        onclick: () => { setLoop(null); refocus(); } }, icon('close')),
+      h('span', { class: 'loop-pause', role: 'radiogroup', 'aria-label': 'Pause between repeats' },
+        h('span', { class: 'lbl' }, 'Pause between repeats'),
+        ...[[0, 'Off'], [1, '1 s'], [2, '2 s']].map(([v, text]) => h('button', { type: 'button', role: 'radio',
+          'aria-checked': String(loopPause() === v),
+          onclick: () => { store.set('play.looppause', v ? String(v) : null); drawLoop(); refocus(); } }, text)))]
+      : ['Click a measure to go there; drag across measures to loop them.']));
+  }
+  // pointer on the pages: a click jumps, a drag (to another measure) chooses a loop
+  let press = null, swallowClick = false;
+  stage.addEventListener('pointerdown', e => {
+    if (!along || !canFollow || !player || e.button !== 0) return;
+    const paper = e.target.closest('.play-page');
+    const n = paper && measureAt(paper, e.clientX, e.clientY);
+    if (!n) return;
+    e.preventDefault();                               // no image drag or text selection
+    press = { n, to: n, x: e.clientX, y: e.clientY, moved: false, id: e.pointerId };
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener('pointermove', e => {
+    if (!press || e.pointerId !== press.id) return;
+    if (!press.moved && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 8) return;
+    press.moved = true;
+    const under = document.elementsFromPoint(e.clientX, e.clientY).find(el => el.classList && el.classList.contains('play-page'));
+    const n = under && measureAt(under, e.clientX, e.clientY);
+    if (n) press.to = n;
+    paintLoop({ a: press.n, b: press.to });
+  });
+  const endPress = e => {
+    if (!press || e.pointerId !== press.id) return;
+    const done = press;
+    press = null; swallowClick = true; setTimeout(() => { swallowClick = false; }, 0);
+    if (e.type === 'pointercancel') { paintLoop(); return; }
+    if (done.moved && done.to !== done.n) {
+      const value = loopOf(done.n, done.to);
+      setLoop(value);
+      if (value) jumpTo(value.t0, value.a);
+    } else if (!done.moved || done.to === done.n) {
+      paintLoop();
+      const at = nearest(done.n, player.time());
+      if (at) jumpTo(at.a, done.n);
+    }
+    refocus();
+  };
+  stage.addEventListener('pointerup', endPress);
+  stage.addEventListener('pointercancel', endPress);
+  stage.addEventListener('click', e => { if (swallowClick) { e.stopImmediatePropagation(); swallowClick = false; } }, true);
+  function restoreLoop() {
+    let saved = null;
+    try { saved = JSON.parse(store.get('loop.' + name) || 'null'); } catch (e) {}
+    // kept while the sheet's timing still has those measures at those times (a remade sheet may not)
+    const fits = saved && spansOf(saved.a).some(x => Math.abs(x.a - saved.t0) < 0.01) && spansOf(saved.b).some(x => Math.abs(x.b - saved.t1) < 0.01);
+    loop = fits ? { a: saved.a, b: saved.b, t0: saved.t0, t1: saved.t1 } : null;
+    paintLoop(); drawLoop();
+  }
+
+  async function setAlong(on) {
+    along = on;
+    store.set('play.along', on ? '1' : null);
+    alongButton.setAttribute('aria-pressed', String(on));
+    videoPanel.classList.toggle('hidden', !on);
+    if (!on) { view.classList.remove('along-on'); sizePanel(); }
+    if (!on) {
+      cancelAnimationFrame(ticking); player?.destroy(); player = null; playQueued = false; screenBox.replaceChildren(); showNote('');
+      lit = null; held = false; draw();
+      return;
+    }
+    sizePanel(); draw();
+    screenBox.replaceChildren(h('div', { class: 'wait' }, 'Loading the video…'));
+    try { timing = await api('/api/sheets/' + enc(name) + '/timing'); }
+    catch (e) { timing = { how: null, lines: [], measures: [], range: { start: 0 }, video_id: sheet.video_id, local_video: null }; }
+    if (!along) return;
+    prepareFollow();
+    restoreLoop();
+    if (timing.video_id) {
+      failedOver = false;
+      player = youtubePlayer(screenBox, timing.video_id, timing.range || { start: 0 }, events);
+      showNote(timing.how ? '' : 'This sheet cannot follow the video yet: the video plays without following.');
+      showSource();
+    } else useFile(null);
+    if (playQueued) { playQueued = false; player?.play(); }     // YouTube keeps it until its player is ready
+    drawSpeeds(); drawPlaying();
+    cancelAnimationFrame(ticking); ticking = requestAnimationFrame(tick);
+  }
+  if (canAlong && store.get('play.along') === '1') setAlong(true);
+
+  leave = () => {
+    along = false; cancelAnimationFrame(ticking); player?.destroy(); removeEventListener('blur', windowBlur);
+    document.removeEventListener('keydown', keys, true); removeEventListener('resize', resized); refit.disconnect();
+    document.removeEventListener('fullscreenchange', fsChange); document.removeEventListener('visibilitychange', wake);
+    clearTimeout(hideTimer); lock?.release().catch(() => {});
+    document.body.classList.remove('playing');
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  };
+  draw();
+};
+
+// ---- progress -------------------------------------------------------------------------------
+
+screens.make = async function makeScreen(name) {
+  const sheet = await api('/api/sheets/' + enc(name));
+  document.title = sheet.title + ' · Vid2Tab';
+  const bar = h('div');
+  const title = h('h1', { class: 'serif' }, sheet.title);
+  const sub = h('div', { class: 'muted' }, sheet.artist);
+  const steps = h('ul', { class: 'jobs' });
+  const message = h('div');
+  const buttons = h('div', { class: 'row' });
+  const log = h('pre', { class: 'log' });
+  const logBox = h('details', {}, h('summary', {}, 'Details'), log);
+  app.append(bar, h('div', { class: 'wrap' }, h('div', { class: 'progress' }, title, sub, steps, message, logBox, h('div', { style: 'height:16px' }), buttons)));
+  let timer = null, stopped = false;
+  leave = () => { stopped = true; clearTimeout(timer); };
+  const setBar = kind => bar.replaceChildren(stepsBar(kind === 'video' ? 2 : 4, backLink('#/', 'Your sheets')));
+
+  const action = async (what, body = {}) => {
+    try { await api(`/api/sheets/${enc(name)}/${what}`, body); } catch (error) { toast(error.message); }
+    tick();
+  };
+  const tick = async () => {
+    clearTimeout(timer);
+    if (stopped) return;
+    let p;
+    try { p = await api(`/api/sheets/${enc(name)}/progress`); } catch (error) { message.textContent = error.message; return; }
+    if (stopped) return;
+    setBar(p.kind || (p.state === 'needs-video' ? 'video' : 'sheet'));
+    if (p.running) {
+      draw(p);
+      message.replaceChildren(p.warnings_so_far ? h('div', { class: 'muted' }, plural(p.warnings_so_far, 'thing') + ' to check so far') : '');
+      buttons.replaceChildren(h('span', { class: 'spacer' }), h('button', { type: 'button', onclick: () => action('cancel') }, 'Cancel'));
+      timer = setTimeout(tick, 1000);
+      return;
+    }
+    // not running: decide what comes next from the outcome and the sheet's state
+    if (p.outcome === 'done' && p.kind === 'video') { location.hash = '#/crop/' + enc(name); return; }
+    if ((p.outcome === 'done' || !p.outcome) && (p.state === 'done' || p.state === 'failed')) { location.hash = '#/sheet/' + enc(name); return; }
+    if (p.steps.length) draw(p); else steps.replaceChildren();
+    const why = p.outcome === 'cancelled' ? 'Stopped.' : p.outcome === 'failed' && p.bot_check
+      ? h('span', {}, 'YouTube asked to confirm you\u2019re not a bot, so the video could not be downloaded. ',
+          `Turn on \u201c${SIGN_IN}\u201d in `, h('a', { href: '#/settings' }, 'Settings'), ', then try again.')
+      : p.outcome === 'failed'
+      ? (p.kind === 'video' ? (sheet.file ? 'The video file could not be read. Is it complete, and a video?' : 'The video could not be fetched. Check the link and your internet connection.')
+         : 'Something went wrong while making the sheet. The details below say what.')
+      : { 'needs-video': 'The video has not been fetched yet.', 'needs-crop': 'The video is ready; the music area is not chosen yet.',
+          'unfinished': 'The sheet is not finished.' }[p.state] || '';
+    message.replaceChildren(h('div', { class: p.outcome === 'failed' ? 'notice bad' : 'muted' }, why));
+    if (p.outcome === 'failed') logBox.open = true;
+    buttons.replaceChildren(h('span', { class: 'spacer' }), continueButton(p, () => p.state === 'needs-crop' ? (location.hash = '#/crop/' + enc(name)) : action('continue')));
+  };
+  const draw = p => {
+    steps.replaceChildren(...p.steps.map(s => {
+      const li = h('li', { class: s.state }, h('span', { class: 'dot' }, s.state === 'done' ? icon('check') : s.state === 'failed' || s.state === 'cancelled' ? icon('close') : ''),
+        s.label, s.state === 'active' && h('span', { class: 'detail' }, [p.detail, clock(p.elapsed)].filter(Boolean).join(' · ')));
+      return s.state === 'active' && p.percent != null ? [li, h('div', { class: 'bar' }, h('div', { style: `width:${p.percent * 100}%` }))] : li;
+    }).flat());
+    if (p.log_tail) log.textContent = p.log_tail.join('\n');
+  };
+  tick();
+};
+
+function continueButton(p, onclick) {
+  const label = p.state === 'needs-video' ? 'Get the video again' : p.state === 'needs-crop' ? 'Choose the music area' : 'Continue';
+  return h('button', { type: 'button', class: 'primary', onclick }, p.outcome === 'failed' ? 'Try again' : label);
+}
+
+// ---- box editor (crop and masks) ------------------------------------------------------------
+// Boxes are [left, top, right, bottom] in the picture's own pixels (natW x natH). Only outlines and,
+// on the selected box, small handles are drawn over the picture.
+
+function boxEditor(picture, natW, natH, { boxes = [], multi = false, kind = '', onchange = () => {} }) {
+  const layer = h('div', { class: 'box-layer' });
+  picture.append(layer);
+  let list = boxes.map(b => b.slice()), selected = multi ? -1 : 0, drag = null;
+  const MIN = 6;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const pct = (v, of) => (v / of * 100) + '%';
+  function render() {
+    layer.replaceChildren(...list.map((b, i) => {
+      const el = h('div', { class: `box ${kind} ${i === selected ? 'selected' : ''}`, 'data-i': i });
+      Object.assign(el.style, { left: pct(b[0], natW), top: pct(b[1], natH), width: pct(b[2] - b[0], natW), height: pct(b[3] - b[1], natH) });
+      if (i === selected) for (const edge of ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']) el.append(h('div', { class: 'handle', 'data-edge': edge }));
+      return el;
+    }));
+  }
+  const point = e => {
+    const r = layer.getBoundingClientRect();
+    return [clamp((e.clientX - r.left) / r.width * natW, 0, natW), clamp((e.clientY - r.top) / r.height * natH, 0, natH)];
+  };
+  layer.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    const [x, y] = point(e);
+    const boxEl = e.target.closest('.box');
+    const edge = e.target.dataset.edge;
+    layer.setPointerCapture(e.pointerId);
+    if (boxEl) {
+      selected = +boxEl.dataset.i;
+      drag = { mode: edge ? 'resize' : 'move', edge: edge || '', x, y, start: list[selected].slice() };
+    } else {
+      const before = list.map(b => b.slice());
+      if (multi) { list.push([x, y, x, y]); selected = list.length - 1; } else { list = [[x, y, x, y]]; selected = 0; }
+      drag = { mode: 'draw', x, y, before };
+    }
+    render();
+    e.preventDefault();
+  });
+  layer.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const [x, y] = point(e);
+    if (drag.mode === 'draw') {
+      list[selected] = [Math.min(x, drag.x), Math.min(y, drag.y), Math.max(x, drag.x), Math.max(y, drag.y)];
+    } else if (drag.mode === 'move') {
+      const s = drag.start, w = s[2] - s[0], hgt = s[3] - s[1];
+      const l = clamp(s[0] + x - drag.x, 0, natW - w), t = clamp(s[1] + y - drag.y, 0, natH - hgt);
+      list[selected] = [l, t, l + w, t + hgt];
+    } else {
+      const s = drag.start.slice();
+      if (drag.edge.includes('w')) s[0] = Math.min(x, s[2] - MIN);
+      if (drag.edge.includes('e')) s[2] = Math.max(x, s[0] + MIN);
+      if (drag.edge.includes('n')) s[1] = Math.min(y, s[3] - MIN);
+      if (drag.edge.includes('s')) s[3] = Math.max(y, s[1] + MIN);
+      list[selected] = s;
+    }
+    render();
+  });
+  const end = () => {
+    if (!drag) return;
+    const b = list[selected];
+    if (drag.mode === 'draw' && (b[2] - b[0] < MIN || b[3] - b[1] < MIN)) {   // a click, not a drag
+      list = drag.before; selected = multi ? -1 : 0;
+    }
+    drag = null;
+    list = list.map(b => b.map(Math.round));
+    render(); onchange(list);
+  };
+  layer.addEventListener('pointerup', end);
+  layer.addEventListener('pointercancel', end);
+  render();
+  return {
+    get boxes() { return list.map(b => b.slice()); },
+    set(boxes) { list = boxes.map(b => b.slice()); selected = multi ? -1 : 0; render(); onchange(list); },
+    remove(i) { list.splice(i, 1); selected = -1; render(); onchange(list); },
+    select(i) { selected = i; render(); },
+    get selected() { return selected; },
+    hide(on) { layer.classList.toggle('hide', on); },
+  };
+}
+
+function momentStrip(name, view, current, pick) {
+  const strip = h('div', { class: 'moments' });
+  const draw = index => strip.replaceChildren(...view.moments.map(m =>
+    h('button', { class: 'moment' + (m.index === index ? ' on' : ''), type: 'button', title: 'Show the video at ' + clock(Math.round(m.time)),
+                  onclick: () => { pick(m.index); draw(m.index); } },
+      h('img', { src: `/api/sheets/${enc(name)}/frame/${m.index}.jpg?w=240`, alt: '', loading: 'lazy' }),
+      h('span', {}, clock(Math.round(m.time))))));
+  draw(current);
+  return strip;
+}
+
+// ---- music area and watermarks --------------------------------------------------------------
+
+screens.crop = async function cropScreen(name) {
+  const bar = h('div');
+  const holder = h('div', { class: 'wrap' }, h('div', { class: 'empty' }, 'Looking for the TAB in the video…'));
+  app.append(bar, holder);
+  const [sheet, view] = await Promise.all([api('/api/sheets/' + enc(name)), api(`/api/sheets/${enc(name)}/frames`)]);
+  document.title = sheet.title + ' · Vid2Tab';
+  const state = { crop: view.crop.slice(), masks: view.masks.map(m => m.slice()) };
+  const back = sheet.pdf ? backLink('#/sheet/' + enc(name), 'Back to the sheet') : backLink('#/', 'Your sheets');
+  let keys = null;
+  const unlisten = () => { if (keys) { document.removeEventListener('keydown', keys); document.removeEventListener('keyup', keys); } };
+  leave = unlisten;
+  const listen = fn => {
+    unlisten();
+    keys = e => { if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A' || e.code === 'Space' && e.target.tagName !== 'INPUT') fn(e); };
+    document.addEventListener('keydown', keys); document.addEventListener('keyup', keys);
+  };
+
+  function stepCrop() {
+    bar.replaceChildren(stepsBar(2, back));
+    const img = h('img', { src: `/api/sheets/${enc(name)}/frame/${view.shown}.jpg`, alt: 'A frame from the video' });
+    const picture = h('div', { class: 'picture' }, img);
+    picture.style.maxWidth = `calc(55vh * ${view.width / view.height})`;     // the whole frame and the buttons in view
+    const editor = boxEditor(picture, view.width, view.height, { boxes: [state.crop], onchange: b => { state.crop = b[0]; } });
+    let hidden = false;
+    const hide = h('button', { type: 'button', onclick: () => { hidden = !hidden; editor.hide(hidden); hide.textContent = hidden ? 'Show the box' : 'Hide the box'; } }, 'Hide the box');
+    const warn = view.warnings.length ? h('div', { class: 'warnline' }, view.found ? `The TAB was found in only ${view.found} of ${view.samples} moments of the video; check that the box fits.`
+      : 'No TAB staff was found, so the box starts as the bottom half of the video. Draw it around the TAB.') : null;
+    holder.replaceChildren(h('div', { class: 'crop' },
+      h('div', {}, h('h1', { class: 'serif' }, 'Choose the music area'),
+        h('p', { class: 'lede' }, view.saved ? 'This is the area the sheet was made from. ' : 'We guessed where the TAB is. ',
+          'Drag the box or its corners so it holds the TAB staff with the chord names and numbers above it. Drag anywhere else to draw a new box.')),
+      warn, picture,
+      h('div', {}, h('div', { class: 'muted small', style: 'margin-bottom:4px' }, 'Other moments in the video (check the box fits them all):'),
+        momentStrip(name, view, view.shown, i => { img.src = `/api/sheets/${enc(name)}/frame/${i}.jpg`; })),
+      h('div', { class: 'row' },
+        h('button', { type: 'button', onclick: () => editor.set([view.guess]) }, 'Back to our guess'), hide,
+        h('span', { class: 'muted small' }, 'or hold Space to see the frame'),
+        h('span', { class: 'spacer' }),
+        h('button', { type: 'button', class: 'primary', onclick: stepMasks }, 'Next: watermarks', icon('next')))));
+    listen(e => {
+      if (e.code === 'Space') { editor.hide(e.type === 'keydown' || hidden); e.preventDefault(); }
+      if (e.type === 'keydown' && e.key === 'Enter') stepMasks();
+    });
+  }
+
+  function stepMasks() {
+    bar.replaceChildren(stepsBar(3, back));
+    const [L, T, R, B] = state.crop, W = R - L, H = B - T;
+    state.masks = state.masks.filter(m => m[0] < R && m[2] > L && m[1] < B && m[3] > T)
+      .map(m => [Math.max(m[0], L), Math.max(m[1], T), Math.min(m[2], R), Math.min(m[3], B)]);
+    const canvas = h('canvas', { width: W, height: H });
+    const picture = h('div', { class: 'picture' }, canvas);
+    picture.style.maxWidth = `min(${Math.max(W * 2.5, 400)}px, calc(55vh * ${W / H}))`;   // enlarge at most 2.5x, keep in view
+    let frameIndex = view.mask_frame, image = new Image(), result = false;
+    const paint = () => {
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(image, L, T, W, H, 0, 0, W, H);
+      if (result) { ctx.fillStyle = '#fff'; for (const m of editor.boxes) ctx.fillRect(m[0], m[1], m[2] - m[0], m[3] - m[1]); }
+    };
+    const load = i => { image = new Image(); image.onload = paint; image.src = `/api/sheets/${enc(name)}/frame/${i}.jpg`; };
+    const chips = h('div', { class: 'chips' });
+    const local = state.masks.map(m => [m[0] - L, m[1] - T, m[2] - L, m[3] - T]);
+    const drawChips = boxes => {
+      chips.replaceChildren(...(boxes.length ? boxes.map((b, i) => h('span', { class: 'chip' + (i === editor?.selected ? ' on' : '') },
+        h('span', { style: 'cursor:pointer', onclick: () => { editor.select(i); drawChips(editor.boxes); } }, `Box ${i + 1}`),
+        h('button', { type: 'button', title: 'Remove this box', 'aria-label': `Remove box ${i + 1}`, onclick: () => editor.remove(i) }, icon('close'))))
+        : [h('span', { class: 'muted small' }, 'No boxes yet.')]));
+    };
+    const editor = boxEditor(picture, W, H, { boxes: local, multi: true, kind: 'mask',
+      onchange: boxes => { state.masks = boxes.map(m => [m[0] + L, m[1] + T, m[2] + L, m[3] + T]); drawChips(boxes); if (result) paint(); } });
+    drawChips(local);
+    const toggle = h('input', { type: 'checkbox', id: 'result', onchange: e => { result = e.target.checked; editor.hide(result); paint(); } });
+    const make = h('button', { type: 'button', class: 'primary' }, 'Make the sheet', icon('next'));
+    const error = h('div', { class: 'error hidden' });
+    const submit = async masks => {
+      make.disabled = true; error.classList.add('hidden');
+      try {
+        await api(`/api/sheets/${enc(name)}/crop`, { crop: state.crop, masks });
+        location.hash = '#/make/' + enc(name);
+      } catch (err) { error.textContent = err.message; error.classList.remove('hidden'); make.disabled = false; }
+    };
+    make.addEventListener('click', () => submit(state.masks));
+    holder.replaceChildren(h('div', { class: 'crop' },
+      h('div', {}, h('h1', { class: 'serif' }, 'Cover watermarks and logos'),
+        h('p', { class: 'lede' }, 'Optional. Drag a box over anything in the music area that is not music: a channel logo, a watermark, a subscribe button. ',
+          'It is painted out in every frame; music under a see-through logo is recovered.')),
+      picture,
+      h('div', { class: 'row' }, chips, h('span', { class: 'spacer' }),
+        h('label', { class: 'row small', style: 'gap:6px;cursor:pointer' }, toggle, 'Show the result')),
+      h('div', {}, h('div', { class: 'muted small', style: 'margin-bottom:4px' }, 'Other moments (a logo may appear only later):'),
+        momentStrip(name, view, frameIndex, i => { frameIndex = i; load(i); })),
+      error,
+      h('div', { class: 'row' },
+        h('button', { type: 'button', onclick: stepCrop }, icon('back'), 'Back'),
+        h('span', { class: 'spacer' }),
+        h('button', { type: 'button', onclick: () => submit([]) }, 'No watermarks'),
+        make)));
+    load(frameIndex);
+    listen(e => {
+      if (e.type !== 'keydown') return;
+      if ((e.key === 'Delete' || e.key === 'Backspace') && editor.selected >= 0) { editor.remove(editor.selected); e.preventDefault(); }
+      if (e.key === 'Enter') make.click();
+    });
+  }
+  stepCrop();
+};
+
+route();
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# Made on your Mac by Vid2Tab: never part of the code
+.venv/
+.uv/
+sheets/
+runs/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
