@@ -143,6 +143,10 @@ def ffmpeg_path():
 # past "Sign in to confirm you're not a bot"). Off unless asked for.
 BROWSERS = ('chrome', 'safari', 'firefox', 'edge', 'brave', 'chromium', 'opera', 'vivaldi')
 _BOT_CHECK = re.compile(r"confirm you.{0,3}re not a bot", re.I)
+_FORMAT_GONE = re.compile(r'requested format is not available|no video formats found|only images are available', re.I)
+FORMAT_HINT = ("YouTube offered no video stream to download. This usually passes: wait a while and try again. If it "
+               "keeps happening, update Vid2Tab (it updates the YouTube downloader) or try with the browser sign-in on "
+               "(web app: Settings, \"Use my browser's YouTube sign-in for downloads\"; CLI: --cookies-from-browser).")
 BOT_HINT = ("YouTube asked to confirm this is not a bot. Using your browser's YouTube sign-in usually gets past "
             "this: --cookies-from-browser BROWSER (web app: Settings, \"Use my browser's YouTube sign-in for downloads\").")
 
@@ -150,6 +154,12 @@ BOT_HINT = ("YouTube asked to confirm this is not a bot. Using your browser's Yo
 def is_bot_check(text):
     """yt-dlp's error says YouTube wants a sign-in to prove this is not a bot."""
     return bool(_BOT_CHECK.search(text or ''))
+
+
+def download_problem(text):
+    """What a yt-dlp failure was, for plain advice: 'bot' (the bot check), 'format' (no format YouTube offered
+    matched: often passing, or a missing JavaScript runtime), else None."""
+    return 'bot' if is_bot_check(text) else 'format' if _FORMAT_GONE.search(text or '') else None
 
 
 def cookie_args(cookies):
@@ -161,7 +171,12 @@ def cookie_args(cookies):
     return ['--cookies-from-browser', cookies]
 
 
-def _download(url, out, section=None, fmt='bv[height<=1080]/b[height<=1080]', cookies=None):
+# The picture: up to 1080p video only (the sound is fetched apart for play.mp4); else a stream with sound up to
+# 1080p; else the best video or the best of anything YouTube offers, rather than failing.
+VIDEO_FORMAT = 'bv[height<=1080]/b[height<=1080]/bv/b'
+
+
+def _download(url, out, section=None, fmt=VIDEO_FORMAT, cookies=None):
     """yt-dlp into out (a name pattern with %(ext)s); a section is cut by yt-dlp with FFmpeg. `cookies`: a
     browser whose YouTube sign-in yt-dlp uses (opt-in)."""
     command = [sys.executable, '-m', 'yt_dlp', '--ignore-config', '--no-playlist', '--no-progress',
@@ -175,6 +190,8 @@ def _download(url, out, section=None, fmt='bv[height<=1080]/b[height<=1080]', co
     except RuntimeError as error:
         if is_bot_check(str(error)) and not cookies:
             raise RuntimeError(f'{error}\n{BOT_HINT}') from None
+        if download_problem(str(error)) == 'format':
+            raise RuntimeError(f'{error}\n{FORMAT_HINT}') from None
         raise
     found = [p for p in out.parent.glob(out.name.replace('%(ext)s', '*')) if p.suffix not in ('.part', '.ytdl')]
     if len(found) != 1:

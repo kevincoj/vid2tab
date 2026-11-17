@@ -716,6 +716,20 @@ const backLink = (href, text) => h('a', { class: 'link', href, style: 'display:i
 const SIGN_IN = 'Use my browser\u2019s YouTube sign-in for downloads';
 const BROWSER_NAMES = { chrome: 'Google Chrome', safari: 'Safari', firefox: 'Firefox', edge: 'Microsoft Edge', brave: 'Brave',
   chromium: 'Chromium', opera: 'Opera', vivaldi: 'Vivaldi' };
+// Plain advice for a YouTube download that failed: 'bot' (the bot check) or 'format' (YouTube offered nothing
+// downloadable just now), with the browser sign-in on or off. `what`: what could not be fetched.
+function youtubeAdvice(problem, signedIn, what = 'the video') {
+  const settings = h('a', { href: '#/settings' }, 'Settings');
+  if (problem === 'bot' && !signedIn) return h('span', {}, `YouTube asked to confirm you\u2019re not a bot, so ${what} could not be downloaded. `,
+    `Turn on \u201c${SIGN_IN}\u201d in `, settings, ', then try again. Or wait a while (an hour or so): it usually passes.');
+  if (problem === 'bot') return h('span', {}, `YouTube asked to confirm you\u2019re not a bot, even with your browser\u2019s sign-in. `,
+    'Check that you are signed in to YouTube in the browser chosen in ', settings, ', wait a while, then try again.');
+  if (problem === 'format' && !signedIn) return h('span', {}, `YouTube did not offer ${what} for download just now. Wait a while and try again, `,
+    `or turn on \u201c${SIGN_IN}\u201d in `, settings, '. If it keeps happening, run Update Vid2Tab.');
+  if (problem === 'format') return h('span', {}, `YouTube did not offer ${what} for download just now. Wait a while and try again. `,
+    'If it keeps happening, run Update Vid2Tab, or turn the browser sign-in off in ', settings, ' and try again.');
+  return null;
+}
 const settingsLink = (text = 'Open Settings') => h('a', { class: 'button quiet', href: '#/settings' }, text);
 screens.settings = async function settingsScreen() {
   document.title = 'Settings · Vid2Tab';
@@ -808,9 +822,9 @@ screens.new = async function detailsScreen(link) {
         picture.replaceChildren(info.thumbnail ? h('img', { src: info.thumbnail, alt: '', referrerpolicy: 'no-referrer' }) : h('div', { class: 'file' }, ''),
           h('figcaption', {}, h('b', {}, 'On YouTube: '), `“${info.video_title}”`, info.artist ? ` · ${info.artist}` : '',
             info.duration ? ` · ${clock(Math.round(info.duration))}` : ''));
-      } else if (info.bot_check) {
-        lede.replaceChildren('YouTube asked to confirm you\u2019re not a bot, so we could not read the details, and the download would fail too. ',
-          `Turn on \u201c${SIGN_IN}\u201d in `, h('a', { href: '#/settings' }, 'Settings'), ', then come back.');
+      } else if (info.bot_check || info.youtube_problem) {
+        lede.replaceChildren('We could not read the video\u2019s details, and the download would likely fail too. ',
+          youtubeAdvice(info.youtube_problem || 'bot', info.signed_in, 'this video'));
       } else {
         lede.textContent = 'We could not read the video’s details (are you online?). Type the title in.';
         picture.replaceChildren(h('div', { class: 'file' }, h('div', { class: 'muted' }, url)));
@@ -1982,9 +1996,10 @@ screens.make = async function makeScreen(name) {
     if (p.outcome === 'done' && p.kind === 'video') { location.hash = '#/crop/' + enc(name); return; }
     if ((p.outcome === 'done' || !p.outcome) && (p.state === 'done' || p.state === 'failed')) { location.hash = '#/sheet/' + enc(name); return; }
     if (p.steps.length) draw(p); else steps.replaceChildren();
-    const why = p.outcome === 'cancelled' ? 'Stopped.' : p.outcome === 'failed' && p.bot_check
-      ? h('span', {}, 'YouTube asked to confirm you\u2019re not a bot, so the video could not be downloaded. ',
-          `Turn on \u201c${SIGN_IN}\u201d in `, h('a', { href: '#/settings' }, 'Settings'), ', then try again.')
+    const why = p.outcome === 'cancelled' ? 'Stopped.' : p.outcome === 'failed' && p.kind === 'video' && !sheet.file && p.youtube_problem
+      ? youtubeAdvice(p.youtube_problem, p.signed_in)
+      : p.outcome === 'failed' && p.bot_check
+      ? youtubeAdvice('bot', false)
       : p.outcome === 'failed'
       ? (p.kind === 'video' ? (sheet.file ? 'The video file could not be read. Is it complete, and a video?' : 'The video could not be fetched. Check the link and your internet connection.')
          : 'Something went wrong while making the sheet. The details below say what.')

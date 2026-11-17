@@ -142,6 +142,10 @@ Mac, only while downloading, and sends them only to YouTube. macOS may ask for p
 (Safari may need Terminal to have "Full Disk Access" in System Settings > Privacy & Security; Chrome asks for
 your Mac password to unlock its keychain).
 
+**"YouTube did not offer the video for download"** (in the details: "Requested format is not available") usually
+passes too: wait a while and try again. If it keeps happening, run **Update Vid2Tab.command**, and try with the
+browser sign-in turned on (or off, if it is on).
+
 Other download errors: run **Update Vid2Tab.command** first.
 
 ## Privacy

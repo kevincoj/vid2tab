@@ -49,6 +49,12 @@ def _bot_check(text):
     return is_bot_check(text)
 
 
+def _problem(text):
+    """'bot', 'format' or None: what a YouTube download failure was (tabvid.intake.download_problem)."""
+    from tabvid.intake import download_problem
+    return download_problem(text)
+
+
 class Job:
     """One `python -m tabvid ...` subprocess and what its output says about its progress.
 
@@ -153,7 +159,10 @@ class Job:
                 'log_tail': self.lines[-40:],
                 # YouTube's "confirm you're not a bot" with no browser sign-in in use: the page suggests Settings
                 'bot_check': self.outcome == 'failed' and '--cookies-from-browser' not in self.command
-                             and any(_bot_check(line) for line in self.lines[-40:])}
+                             and any(_bot_check(line) for line in self.lines[-40:]),
+                # the same and "format not available", with or without the sign-in: the page gives plain advice
+                'youtube_problem': _problem('\n'.join(self.lines[-40:])) if self.outcome == 'failed' else None,
+                'signed_in': '--cookies-from-browser' in self.command}
 
 
 # Words in a YouTube title that describe the video, not the song: "(Slow version)", "| Guitar TAB", ...
@@ -327,7 +336,8 @@ class App:
             data = self._ytdlp_json(source)
         except Exception as error:             # offline, private video, ...: the user types the details
             from tabvid.intake import is_bot_check
-            return {**info, 'found': False, 'bot_check': is_bot_check(str(error)) and not self.cookies()}, None
+            return {**info, 'found': False, 'bot_check': is_bot_check(str(error)) and not self.cookies(),
+                    'youtube_problem': _problem(str(error)), 'signed_in': bool(self.cookies())}, None
         raw = data.get('title') or ''
         return {**info, 'found': True, 'video_title': raw, 'title': clean_title(raw),
                 'artist': data.get('channel') or data.get('uploader') or '',
@@ -647,10 +657,15 @@ class App:
             except Exception as error:
                 youtube = '://' in (read_json(folder / 'web.json').get('source') or '')
                 bot = youtube and intake.is_bot_check(str(error)) and not self.cookies()
+                problem = youtube and intake.download_problem(str(error))
                 job.update(state='failed', detail=str(error), bot_check=bot,
                            note="YouTube asked to confirm you're not a bot, so the sound couldn't be downloaded. "
                                 "Turn on \u201cUse my browser's YouTube sign-in for downloads\u201d in Settings, then try again."
-                           if bot else "Couldn't download the sound from YouTube. Try again, or update Vid2Tab if it keeps happening."
+                           if bot else "YouTube asked to confirm you're not a bot, even with your browser's sign-in. "
+                                "Check you are signed in to YouTube in that browser, wait a while, then try again."
+                           if problem == 'bot' else "YouTube didn't offer the sound for download just now. "
+                                "Wait a while and try again; if it keeps happening, update Vid2Tab."
+                           if problem == 'format' else "Couldn't download the sound from YouTube. Try again, or update Vid2Tab if it keeps happening."
                            if youtube else "Couldn't add the sound from the original video file.")
         threading.Thread(target=work, daemon=True).start()
         return self.sound(folder)

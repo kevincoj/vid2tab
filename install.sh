@@ -60,7 +60,9 @@ FFMPEG=$(.venv/bin/python -c 'from tabvid.intake import ffmpeg_path; print(ffmpe
     || fail "FFmpeg does not run. Try: rm -rf .venv && ./install.sh"
 say "FFmpeg: ok"
 YTDLP=$(.venv/bin/python -m yt_dlp --version 2>/dev/null) || fail "yt-dlp does not run. Try: rm -rf .venv && ./install.sh"
-say "yt-dlp: $YTDLP"
+JS=$(.venv/bin/python -m yt_dlp -v 2>&1 | sed -n 's/.*JS runtimes: //p')
+case "$JS" in deno*) ;; *) fail "yt-dlp finds no JavaScript runtime (Deno), which YouTube needs. Try: rm -rf .venv && ./install.sh" ;; esac
+say "yt-dlp: $YTDLP (JavaScript: $JS)"
 
 chmod +x install.sh update.sh Vid2Tab.command "Update Vid2Tab.command" 2>/dev/null
 say ""

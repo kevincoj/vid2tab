@@ -30,9 +30,10 @@ To throw away changes made here and update anyway: git reset --hard origin/HEAD 
     ./install.sh $DEV || exit 1
 
     export PIP_CACHE_DIR="$PWD/.uv/cache/pip"
-    echo "Updating yt-dlp ..."
-    .venv/bin/python -m pip install --quiet --upgrade yt-dlp || fail "Could not update yt-dlp (no internet?)."
-    echo "yt-dlp: $(.venv/bin/python -m yt_dlp --version)"
+    echo "Updating yt-dlp and Deno (its JavaScript runtime for YouTube) ..."
+    .venv/bin/python -m pip install --quiet --upgrade "yt-dlp[default,deno]" deno \
+        || fail "Could not update yt-dlp (no internet?)."
+    echo "yt-dlp: $(.venv/bin/python -m yt_dlp --version), Deno: $(.venv/bin/deno --version 2>/dev/null | head -1 | cut -d' ' -f2)"
 
     if curl -s --max-time 2 http://127.0.0.1:8765/ 2>/dev/null | grep -q 'Vid2Tab'; then
         echo

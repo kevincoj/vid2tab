@@ -5,7 +5,9 @@ opencv-python==4.12.0.88
 pillow==12.0.0
 reportlab==4.4.4
 PyYAML>=6.0,<7
-# YouTube changes often: a minimum, not a pin, so `pip install -U yt-dlp` can follow it.
-yt-dlp>=2026.10.26
+# YouTube changes often: a minimum, not a pin, so update.sh can follow it. [default] brings yt-dlp-ejs (YouTube's
+# JavaScript challenges), [deno] a Deno binary inside .venv to run them: without them YouTube (above all with a
+# browser sign-in) offers only some formats or none ("Requested format is not available").
+yt-dlp[default,deno]>=2026.10.26
 imageio-ffmpeg==0.8.1
 # Optional later: pytesseract (also needs a local tesseract binary).

@@ -228,3 +228,27 @@ def test_the_cli_flag_reaches_the_run_and_is_not_saved(tmp_path, monkeypatch):
     assert got['args'][-1] == 'brave'
     with pytest.raises(SystemExit):
         cli.main(['x.mp4', '-o', str(tmp_path / 'r'), '--cookies-from-browser', 'lynx'])
+
+
+FORMAT_GONE = 'YouTube download failed: ERROR: [youtube] 4_HcZc9IGrM: Requested format is not available.'
+
+
+def test_the_video_format_falls_back_and_a_missing_format_gets_plain_advice(tmp_path, monkeypatch):
+    """A public install with the browser sign-in on (no JavaScript runtime yet): YouTube offered only storyboards and
+    yt-dlp said "Requested format is not available". The format now falls back step by step, and that error is
+    recognised (never mistaken for the bot check) and explained."""
+    assert intake.VIDEO_FORMAT.split('/') == ['bv[height<=1080]', 'b[height<=1080]', 'bv', 'b']
+    assert intake.download_problem(FORMAT_GONE) == 'format'
+    assert intake.download_problem('ERROR: [youtube] x: No video formats found!') == 'format'
+    assert intake.download_problem(BOT) == 'bot'
+    assert intake.download_problem('ERROR: HTTP Error 403: Forbidden') is None
+    commands = []
+
+    def gone(command, what, timeout):
+        commands.append(command)
+        raise RuntimeError(FORMAT_GONE)
+    monkeypatch.setattr(intake, '_run', gone)
+    with pytest.raises(RuntimeError) as error:
+        intake._download('https://www.youtube.com/watch?v=abcdefghijk', tmp_path / 'v.%(ext)s', cookies='chrome')
+    assert commands[0][commands[0].index('-f') + 1] == intake.VIDEO_FORMAT
+    assert str(error.value).splitlines()[-1] == intake.FORMAT_HINT and 'wait a while' in intake.FORMAT_HINT

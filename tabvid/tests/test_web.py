@@ -833,3 +833,46 @@ def test_a_bot_check_suggests_the_setting(server, monkeypatch):
     # with the sign-in already on, the setting is not suggested again
     request(srv, 'POST', '/api/settings', {'youtube_cookies': 'chrome'})
     assert app.video_info('https://www.youtube.com/watch?v=abcdefghijk')[0]['bot_check'] is False
+
+
+FORMAT_ERROR = 'YouTube download failed: ERROR: [youtube] abcdefghijk: Requested format is not available.'
+
+
+def test_a_missing_format_and_a_bot_check_with_the_sign_in_on_are_told_apart(server, monkeypatch):
+    import sys
+    import time
+    from tabvid import intake
+    from tabvid.web import server as web
+    srv, app = server
+    folder = make_sheet(app.sheets)
+    (folder / 'web.json').write_text(json.dumps({'source': 'https://www.youtube.com/watch?v=abcdefghijk', 'title': 'My Song'}))
+    (folder / 'video.mp4').write_bytes(b'silent')
+
+    def job_saying(text, signed_in):
+        extra = ['--cookies-from-browser', 'chrome'] if signed_in else []
+        job = web.Job(folder, 'video', [sys.executable, '-c', f'print({text!r}); raise SystemExit(1)', *extra,
+                                        '-m', 'https://www.youtube.com/watch?v=abcdefghijk'])
+        for _ in range(100):
+            if not job.running:
+                break
+            time.sleep(.05)
+        return job.progress()
+    p = job_saying(FORMAT_ERROR, False)
+    assert p['youtube_problem'] == 'format' and not p['bot_check'] and not p['signed_in']
+    p = job_saying(BOT_ERROR, True)
+    assert p['youtube_problem'] == 'bot' and p['signed_in'] and not p['bot_check']     # the sign-in is already on
+    # reading the details
+    def gone(*a, **k):
+        raise RuntimeError(FORMAT_ERROR)
+    monkeypatch.setattr(app, '_ytdlp_json', gone)
+    info = app.video_info('https://www.youtube.com/watch?v=abcdefghijk')[0]
+    assert info['youtube_problem'] == 'format' and info['signed_in'] is False and not info['bot_check']
+    # the sound for play along
+    monkeypatch.setattr(intake, 'make_play_copy', gone)
+    request(srv, 'POST', '/api/sheets/song/sound', {})
+    for _ in range(50):
+        state = request(srv, 'GET', '/api/sheets/song/sound')[1]
+        if state['state'] != 'running':
+            break
+        time.sleep(.05)
+    assert 'Wait a while' in state['note'] and not state['bot_check']
